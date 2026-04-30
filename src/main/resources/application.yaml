@@ -1,0 +1,62 @@
+spring:
+  application:
+      name: lm
+  datasource:
+    url: jdbc:mariadb://localhost:3306/los_min_db
+    driver-class-name: org.mariadb.jdbc.Driver
+    username: los_min_user
+    password: L0$_m1n_u$3r
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    database-platform: org.hibernate.dialect.MariaDBDialect
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+app:
+  bootstrap:
+    super-admin:
+      username: superadmin
+      email: superadmin@credvenn.com
+      password: ChangeMe123!
+  security:
+    jwt:
+      secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      issuer: los-be
+      access-token-expiration-seconds: 900
+      refresh-token-expiration-seconds: 1209600
+  integration:
+    kyc:
+      smile-id:
+        base-url: https://testapi.smileidentity.com
+        partner-id: CHANGE_ME
+        api-key: CHANGE_ME
+        source-sdk-version: 1.0.0
+    cladfy:
+      base-url: https://service.cladfy.com/v1
+      api-key: CHANGE_ME
+      webhook-base-url: http://localhost:8080
+  document:
+    storage:
+      provider: LOCAL
+      local:
+        root-path: ./data/documents
+      s3:
+        bucket: CHANGE_ME
+        region: us-east-1
+        prefix: los-documents
+        endpoint:
+        access-key:
+        secret-key:
+        path-style-access-enabled: false

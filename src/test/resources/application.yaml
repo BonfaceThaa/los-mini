@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:lmtest;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: true
+
+app:
+  bootstrap:
+    super-admin:
+      username: superadmin
+      email: superadmin@credvenn.com
+      password: ChangeMe123!
+  security:
+    jwt:
+      secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      issuer: test-issuer
+      access-token-expiration-seconds: 900
+      refresh-token-expiration-seconds: 1209600
