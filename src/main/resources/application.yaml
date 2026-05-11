@@ -1,3 +1,5 @@
+server:
+    port: 8081
 spring:
   application:
       name: lm
@@ -24,6 +26,12 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+logging:
+  level:
+    com.credvenn.lm: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} [corr=%X{correlationId:-},tenant=%X{tenantId:-},app=%X{applicationId:-},user=%X{userId:-}] - %msg%n"
+
 app:
   bootstrap:
     super-admin:
@@ -38,11 +46,23 @@ app:
       refresh-token-expiration-seconds: 1209600
   integration:
     kyc:
+      provider: SIMULATED
       smile-id:
         base-url: https://testapi.smileidentity.com
         partner-id: CHANGE_ME
         api-key: CHANGE_ME
         source-sdk-version: 1.0.0
+    statement:
+      provider: SIMULATED
+    fineract:
+      base-url: http://localhost:8080/fineract-provider/api/v1
+      username: mifos
+      password: password
+      default-office-id: 1
+      legal-form-id: 1
+      locale: en
+      date-format: dd MMMM yyyy
+      transaction-processing-strategy-code: advanced-payment-allocation-strategy
     cladfy:
       base-url: https://service.cladfy.com/v1
       api-key: CHANGE_ME
@@ -60,3 +80,6 @@ app:
         access-key:
         secret-key:
         path-style-access-enabled: false
+  statement-inbox:
+    local:
+      root-path: ./data/inbound-statements

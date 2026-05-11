@@ -1,11 +1,13 @@
 package com.credvenn.lm.security;
 
+import com.credvenn.lm.common.logging.LoggingContext;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,6 +37,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         principal.authorities());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 TenantContext.setTenantId(principal.tenantId());
+                if (principal.tenantId() != null && !principal.tenantId().isBlank()) {
+                    MDC.put(LoggingContext.TENANT_ID, principal.tenantId());
+                }
+                if (principal.userId() != null && !principal.userId().isBlank()) {
+                    MDC.put(LoggingContext.USER_ID, principal.userId());
+                }
+                if (principal.username() != null && !principal.username().isBlank()) {
+                    MDC.put(LoggingContext.USERNAME, principal.username());
+                }
             }
             filterChain.doFilter(request, response);
         } catch (JwtException ex) {
@@ -42,6 +53,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             response.setContentType("application/json");
             response.getWriter().write("{\"message\":\"Invalid or expired access token\"}");
         } finally {
+            MDC.remove(LoggingContext.TENANT_ID);
+            MDC.remove(LoggingContext.USER_ID);
+            MDC.remove(LoggingContext.USERNAME);
+            SecurityContextHolder.clearContext();
             TenantContext.clear();
         }
     }

@@ -8,6 +8,7 @@ import com.credvenn.lm.security.AuthenticatedUser;
 import com.credvenn.lm.security.CurrentActorService;
 import com.credvenn.lm.security.Role;
 import com.credvenn.lm.security.RoleService;
+import com.credvenn.lm.subscription.SubscriptionGuardService;
 import com.credvenn.lm.tenant.TenantRepository;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,18 +24,21 @@ public class UserService {
     private final CurrentActorService currentActorService;
     private final PasswordEncoder passwordEncoder;
     private final TenantRepository tenantRepository;
+    private final SubscriptionGuardService subscriptionGuardService;
 
     public UserService(
             AppUserRepository userRepository,
             RoleService roleService,
             CurrentActorService currentActorService,
             PasswordEncoder passwordEncoder,
-            TenantRepository tenantRepository) {
+            TenantRepository tenantRepository,
+            SubscriptionGuardService subscriptionGuardService) {
         this.userRepository = userRepository;
         this.roleService = roleService;
         this.currentActorService = currentActorService;
         this.passwordEncoder = passwordEncoder;
         this.tenantRepository = tenantRepository;
+        this.subscriptionGuardService = subscriptionGuardService;
     }
 
     @Transactional(readOnly = true)
@@ -72,6 +76,7 @@ public class UserService {
     @Transactional
     public UserDtos.UserResponse createUser(String tenantId, UserDtos.CreateUserRequest request) {
         assertTenantExists(tenantId);
+        subscriptionGuardService.assertCanCreateUser(tenantId);
         ensureUniqueUser(tenantId, request.username(), request.email(), null);
         AppUser user = new AppUser();
         user.setTenantId(tenantId);

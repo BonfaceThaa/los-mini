@@ -39,6 +39,19 @@ public class RoleTemplateService {
                         PermissionCatalog.CLIENT_CREATE.code(),
                         PermissionCatalog.LOAN_VIEW.code(),
                         PermissionCatalog.LOAN_CREATE.code(),
+                        PermissionCatalog.KYC_VIEW.code(),
+                        PermissionCatalog.KYC_RUN.code(),
+                        PermissionCatalog.KYC_MANUAL_REVIEW.code(),
+                        PermissionCatalog.CREDIT_CHECK_VIEW.code(),
+                        PermissionCatalog.CREDIT_CHECK_RUN.code(),
+                        PermissionCatalog.CREDIT_MANUAL_APPROVE.code(),
+                        PermissionCatalog.DOCUMENT_VIEW.code(),
+                        PermissionCatalog.DOCUMENT_UPLOAD.code(),
+                        PermissionCatalog.DOCUMENT_DELETE.code(),
+                        PermissionCatalog.STATEMENT_INBOX_VIEW.code(),
+                        PermissionCatalog.STATEMENT_INBOX_RESOLVE.code(),
+                        PermissionCatalog.INVENTORY_VIEW.code(),
+                        PermissionCatalog.INVENTORY_MANAGE.code(),
                         PermissionCatalog.KYC_APPROVE.code(),
                         PermissionCatalog.KYC_REVOKE.code(),
                         PermissionCatalog.TASK_CREATE.code(),
@@ -55,6 +68,13 @@ public class RoleTemplateService {
                         PermissionCatalog.CLIENT_CREATE.code(),
                         PermissionCatalog.LOAN_VIEW.code(),
                         PermissionCatalog.LOAN_CREATE.code(),
+                        PermissionCatalog.KYC_VIEW.code(),
+                        PermissionCatalog.KYC_RUN.code(),
+                        PermissionCatalog.CREDIT_CHECK_VIEW.code(),
+                        PermissionCatalog.CREDIT_CHECK_RUN.code(),
+                        PermissionCatalog.DOCUMENT_VIEW.code(),
+                        PermissionCatalog.DOCUMENT_UPLOAD.code(),
+                        PermissionCatalog.INVENTORY_VIEW.code(),
                         PermissionCatalog.TASK_CREATE.code(),
                         PermissionCatalog.TASK_COMPLETE.code()));
 
@@ -65,6 +85,8 @@ public class RoleTemplateService {
                 "KYC review access",
                 Set.of(
                         PermissionCatalog.CLIENT_VIEW.code(),
+                        PermissionCatalog.KYC_VIEW.code(),
+                        PermissionCatalog.KYC_MANUAL_REVIEW.code(),
                         PermissionCatalog.KYC_APPROVE.code(),
                         PermissionCatalog.KYC_REVOKE.code()));
 
@@ -73,7 +95,15 @@ public class RoleTemplateService {
                 "READ_ONLY",
                 "Read Only",
                 "Read only tenant access",
-                Set.of(PermissionCatalog.CLIENT_VIEW.code(), PermissionCatalog.LOAN_VIEW.code(), PermissionCatalog.ROLE_VIEW.code(), PermissionCatalog.USER_VIEW.code()));
+                Set.of(
+                        PermissionCatalog.CLIENT_VIEW.code(),
+                        PermissionCatalog.LOAN_VIEW.code(),
+                        PermissionCatalog.ROLE_VIEW.code(),
+                        PermissionCatalog.USER_VIEW.code(),
+                        PermissionCatalog.DOCUMENT_VIEW.code(),
+                        PermissionCatalog.KYC_VIEW.code(),
+                        PermissionCatalog.CREDIT_CHECK_VIEW.code(),
+                        PermissionCatalog.INVENTORY_VIEW.code()));
     }
 
     public Role getRequiredTenantRole(String tenantId, String code) {

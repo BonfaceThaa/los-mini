@@ -45,8 +45,14 @@ public class BootstrapDataInitializer implements ApplicationRunner {
         ensurePlatformRole(
                 "INTERNAL_STAFF",
                 "Internal Staff",
-                "Internal staff allowed to onboard tenants",
-                Set.of(PermissionCatalog.TENANT_CREATE.code(), PermissionCatalog.TENANT_VIEW_ALL.code()));
+                "Internal staff allowed to onboard tenants and view tenant subscriptions",
+                Set.of(
+                        PermissionCatalog.TENANT_CREATE.code(),
+                        PermissionCatalog.TENANT_VIEW_ALL.code(),
+                        PermissionCatalog.TENANT_SUBSCRIPTION_VIEW.code(),
+                        PermissionCatalog.STATEMENT_INBOX_VIEW.code(),
+                        PermissionCatalog.STATEMENT_INBOX_RESOLVE.code(),
+                        PermissionCatalog.STATEMENT_INBOUND_INGEST.code()));
         ensureBootstrapSuperAdmin(superAdminRole);
     }
 

@@ -44,4 +44,6 @@ public interface AppUserRepository extends JpaRepository<AppUser, String> {
 
     @EntityGraph(attributePaths = {"roles", "roles.permissions"})
     Optional<AppUser> findByIdAndTenantIdIsNull(String id);
+
+    long countByTenantIdAndActiveTrue(String tenantId);
 }

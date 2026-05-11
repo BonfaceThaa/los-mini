@@ -1,0 +1,12 @@
+package com.credvenn.lm.payment;
+
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface TenantPaymentChannelRepository extends JpaRepository<TenantPaymentChannel, String> {
+
+    Optional<TenantPaymentChannel> findByShortCodeAndActiveTrue(String shortCode);
+
+    List<TenantPaymentChannel> findAllByTenantIdOrderByShortCodeAsc(String tenantId);
+}
