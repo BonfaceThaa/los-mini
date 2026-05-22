@@ -25,6 +25,8 @@ public final class SubscriptionDtos {
             @NotNull @PositiveOrZero Integer approvedApplicationThreshold,
             @NotNull @PositiveOrZero BigDecimal monthlyFee,
             @NotNull @PositiveOrZero BigDecimal interestSharePercentage,
+            @NotNull @PositiveOrZero BigDecimal kycSuccessCost,
+            @NotNull @PositiveOrZero BigDecimal statementSuccessCost,
             @NotBlank @Size(max = 10) String currency) {
     }
 
@@ -38,6 +40,8 @@ public final class SubscriptionDtos {
             @NotNull @PositiveOrZero Integer approvedApplicationThreshold,
             @NotNull @PositiveOrZero BigDecimal monthlyFee,
             @NotNull @PositiveOrZero BigDecimal interestSharePercentage,
+            @NotNull @PositiveOrZero BigDecimal kycSuccessCost,
+            @NotNull @PositiveOrZero BigDecimal statementSuccessCost,
             @NotBlank @Size(max = 10) String currency,
             boolean active) {
     }
@@ -47,6 +51,7 @@ public final class SubscriptionDtos {
             @NotBlank String subscriptionPlanId,
             @NotNull Instant currentPeriodStart,
             @NotNull Instant currentPeriodEnd,
+            @NotNull @PositiveOrZero BigDecimal initialPrepaidAmount,
             @Size(max = 1000) String operationalNotes) {
     }
 
@@ -75,6 +80,8 @@ public final class SubscriptionDtos {
             int approvedApplicationThreshold,
             BigDecimal monthlyFee,
             BigDecimal interestSharePercentage,
+            BigDecimal kycSuccessCost,
+            BigDecimal statementSuccessCost,
             String currency,
             boolean active,
             String createdBy,
@@ -92,9 +99,14 @@ public final class SubscriptionDtos {
             String subscriptionPlanName,
             TenantSubscriptionStatus status,
             SubscriptionPricingMode pricingMode,
+            SubscriptionPricingMode nextPricingMode,
             Instant currentPeriodStart,
             Instant currentPeriodEnd,
             Instant switchedToInterestShareAt,
+            Instant nextPricingModeEffectiveAt,
+            BigDecimal prepaidBalance,
+            BigDecimal totalCredited,
+            BigDecimal totalDebited,
             String operationalNotes,
             String createdBy,
             String updatedBy,
@@ -108,13 +120,50 @@ public final class SubscriptionDtos {
             String subscriptionId,
             String subscriptionPlanId,
             String subscriptionPlanCode,
+            String currency,
             long activeUsers,
             long maxUsers,
             long activeBranches,
             long maxBranches,
             long createdApplicationsInPeriod,
             long monthlyApplicationLimit,
+            long approvedApplicationsInPeriod,
+            long approvedApplicationThreshold,
+            long successfulKycsCharged,
+            long successfulStatementsCharged,
+            BigDecimal totalKycCharges,
+            BigDecimal totalStatementCharges,
+            BigDecimal prepaidBalance,
+            BigDecimal totalCredited,
+            BigDecimal totalDebited,
+            SubscriptionPricingMode currentPricingMode,
+            SubscriptionPricingMode nextPricingMode,
             Instant currentPeriodStart,
-            Instant currentPeriodEnd) {
+            Instant currentPeriodEnd,
+            Instant nextPricingModeEffectiveAt) {
+    }
+
+    @Schema(name = "CreateSubscriptionTopUpRequest")
+    public record CreateSubscriptionTopUpRequest(
+            @NotNull @PositiveOrZero BigDecimal amount,
+            @Size(max = 1000) String notes) {
+    }
+
+    @Schema(name = "TenantSubscriptionLedgerResponse")
+    public record TenantSubscriptionLedgerResponse(
+            String id,
+            String tenantId,
+            String subscriptionId,
+            SubscriptionLedgerEntryType entryType,
+            SubscriptionChargeType chargeType,
+            BigDecimal amount,
+            String currency,
+            SubscriptionReferenceType referenceType,
+            String referenceId,
+            BigDecimal balanceBefore,
+            BigDecimal balanceAfter,
+            String notes,
+            String createdBy,
+            Instant createdAt) {
     }
 }

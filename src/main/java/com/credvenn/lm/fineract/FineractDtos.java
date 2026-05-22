@@ -87,4 +87,34 @@ public final class FineractDtos {
     @Schema(name = "LoanRepaymentListResponse")
     public record LoanRepaymentListResponse(List<LoanRepaymentResponse> repayments) {
     }
+
+    @Schema(name = "FineractClientResponse")
+    public record FineractClientResponse(
+            String id,
+            String accountNo,
+            String externalId,
+            String status,
+            boolean active,
+            String firstname,
+            String middlename,
+            String lastname,
+            String displayName,
+            String mobileNo,
+            String officeName) {
+
+        public static FineractClientResponse from(FineractGateway.FineractClient client) {
+            return new FineractClientResponse(
+                    client.id(),
+                    client.accountNo(),
+                    client.externalId(),
+                    client.status(),
+                    client.active(),
+                    client.firstname(),
+                    client.middlename(),
+                    client.lastname(),
+                    client.displayName(),
+                    client.mobileNo(),
+                    client.officeName());
+        }
+    }
 }

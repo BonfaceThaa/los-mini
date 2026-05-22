@@ -10,6 +10,14 @@ public interface StatementAnalysisProvider {
 
     StatementDecision analyze(LoanRequestApplication application, ApplicationDocument document);
 
+    default boolean supportsAsyncWebhookCompletion() {
+        return false;
+    }
+
+    default StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document) {
+        throw new UnsupportedOperationException("Provider does not support asynchronous submission");
+    }
+
     record StatementDecision(
             StatementAnalysisStatus status,
             BigDecimal averageMonthlyInflow,

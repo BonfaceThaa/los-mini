@@ -18,8 +18,24 @@ app:
       email: superadmin@credvenn.com
       password: ChangeMe123!
   security:
+    encryption-key: test-encryption-key
     jwt:
       secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       issuer: test-issuer
+      service-secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      service-issuer: test-service-issuer
       access-token-expiration-seconds: 900
       refresh-token-expiration-seconds: 1209600
+  integration:
+    statement:
+      provider: SIMULATED
+      auto-trigger-document-types:
+        - MPESA_STATEMENT
+        - BANK_STATEMENT
+      document-type-providers:
+        MPESA_STATEMENT: mpesa
+        BANK_STATEMENT: bank
+    cladfy:
+      base-url: https://service.cladfy.com/v1
+      api-key: test-api-key
+      webhook-base-url: http://localhost:8080

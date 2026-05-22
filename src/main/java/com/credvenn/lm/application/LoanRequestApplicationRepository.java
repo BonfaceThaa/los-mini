@@ -20,4 +20,13 @@ public interface LoanRequestApplicationRepository extends JpaRepository<LoanRequ
     List<LoanRequestApplication> findAllByTenantIdAndStatusAndFineractLoanIdIsNotNullOrderByCreatedAtDesc(
             String tenantId,
             ApplicationStatus status);
+
+    List<LoanRequestApplication> findAllByTenantIdAndFineractLoanIdIsNotNullAndInstallmentAmountIsNotNullOrderByCreatedAtAsc(
+            String tenantId);
+
+    List<LoanRequestApplication> findAllByTenantIdAndStatusAndAssignedDeviceIdIsNotNullAndAssignedDeviceImei1IsNotNullAndFineractLoanIdIsNotNullOrderByCreatedAtAsc(
+            String tenantId,
+            ApplicationStatus status);
+
+    long countByTenantIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(String tenantId, Instant start, Instant end);
 }

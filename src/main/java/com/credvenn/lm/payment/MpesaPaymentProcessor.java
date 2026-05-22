@@ -5,6 +5,7 @@ import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
+import com.credvenn.lm.devicecontrol.LoanRepaymentPostedEvent;
 import com.credvenn.lm.fineract.FineractGateway;
 import com.credvenn.lm.fineract.FineractGateway.LoanSummary;
 import com.credvenn.lm.fineract.FineractGateway.LoanRepaymentRequest;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,18 +37,21 @@ public class MpesaPaymentProcessor {
     private final LoanRequestApplicationRepository applicationRepository;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
+    private final ApplicationEventPublisher eventPublisher;
 
     public MpesaPaymentProcessor(
             MpesaPaymentReceiptRepository receiptRepository,
             TenantPaymentChannelRepository channelRepository,
             LoanRequestApplicationRepository applicationRepository,
             TenantService tenantService,
-            FineractGateway fineractGateway) {
+            FineractGateway fineractGateway,
+            ApplicationEventPublisher eventPublisher) {
         this.receiptRepository = receiptRepository;
         this.channelRepository = channelRepository;
         this.applicationRepository = applicationRepository;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
+        this.eventPublisher = eventPublisher;
     }
 
     @Async
@@ -64,16 +69,30 @@ public class MpesaPaymentProcessor {
             Tenant tenant = tenantService.getRequiredTenant(channel.getTenantId());
             receipt.setTenantId(tenant.getId());
 
-            String normalizedPhone = normalizeBillRefPhone(receipt.getBillRefNumber());
+            LoanRequestApplication application = null;
+            String normalizedPhone = receipt.getNormalizedPhoneNumber();
+            if (receipt.getMatchedApplicationId() != null && !receipt.getMatchedApplicationId().isBlank()) {
+                application = applicationRepository.findByIdAndTenantId(receipt.getMatchedApplicationId(), tenant.getId()).orElse(null);
+                if (application != null && (normalizedPhone == null || normalizedPhone.isBlank())) {
+                    normalizedPhone = normalizePhone(application.getPhoneNumber());
+                }
+            }
+            if (normalizedPhone == null || normalizedPhone.isBlank()) {
+                normalizedPhone = normalizeBillRefPhone(receipt.getBillRefNumber());
+            }
             receipt.setNormalizedPhoneNumber(normalizedPhone);
 
-            List<LoanRequestApplication> candidates = applicationRepository.findAllByTenantIdAndStatusAndFineractLoanIdIsNotNullOrderByCreatedAtDesc(
-                    tenant.getId(),
-                    ApplicationStatus.FINERACT_LOAN_ACTIVATED);
-            LoanRequestApplication application = candidates.stream()
-                    .filter(item -> normalizedPhone.equals(normalizePhone(item.getPhoneNumber())))
-                    .findFirst()
-                    .orElse(null);
+            if (application == null) {
+                List<LoanRequestApplication> candidates = applicationRepository.findAllByTenantIdAndStatusAndFineractLoanIdIsNotNullOrderByCreatedAtDesc(
+                        tenant.getId(),
+                        ApplicationStatus.FINERACT_LOAN_ACTIVATED);
+                for (LoanRequestApplication candidate : candidates) {
+                    if (normalizedPhone.equals(normalizePhone(candidate.getPhoneNumber()))) {
+                        application = candidate;
+                        break;
+                    }
+                }
+            }
 
             if (application == null) {
                 receipt.setProcessingStatus(MpesaPaymentProcessingStatus.LOAN_NOT_FOUND);
@@ -106,6 +125,11 @@ public class MpesaPaymentProcessor {
             receipt.setProcessedAt(Instant.now());
             receipt.setFailureReason(null);
             log.info("Posted Fineract repayment transactionId={} for fineractLoanId={}", transactionId, application.getFineractLoanId());
+            eventPublisher.publishEvent(new LoanRepaymentPostedEvent(
+                    tenant.getId(),
+                    application.getId(),
+                    application.getFineractLoanId(),
+                    receipt.getId()));
         } catch (Exception ex) {
             receipt.setProcessingStatus(MpesaPaymentProcessingStatus.FAILED);
             receipt.setFailureReason(ex.getMessage());

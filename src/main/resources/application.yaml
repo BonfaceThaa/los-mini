@@ -1,5 +1,5 @@
 server:
-    port: 8081
+    port: 8082
 spring:
   application:
       name: lm
@@ -39,9 +39,29 @@ app:
       email: superadmin@credvenn.com
       password: ChangeMe123!
   security:
+    encryption-key: CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+    cors:
+      allowed-origins:
+        - "*"
+      allowed-methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      allowed-headers:
+        - "*"
+      exposed-headers:
+        - Authorization
+        - Location
+      allow-credentials: false
+      max-age-seconds: 3600
     jwt:
       secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       issuer: los-be
+      service-secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      service-issuer: los-be-service
       access-token-expiration-seconds: 900
       refresh-token-expiration-seconds: 1209600
   integration:
@@ -53,7 +73,13 @@ app:
         api-key: CHANGE_ME
         source-sdk-version: 1.0.0
     statement:
-      provider: SIMULATED
+      provider: CLADFY
+      auto-trigger-document-types:
+        - MPESA_STATEMENT
+        - BANK_STATEMENT
+      document-type-providers:
+        MPESA_STATEMENT: mpesa
+        BANK_STATEMENT: bank
     fineract:
       base-url: http://localhost:8080/fineract-provider/api/v1
       username: mifos

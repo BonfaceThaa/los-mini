@@ -61,21 +61,26 @@ public class InventoryAssignmentService {
             requestedDevice.setStatus(InventoryDeviceStatus.ASSIGNED);
             log.info("Assigning inventory device deviceId={} to application", requestedDevice.getId());
             applicationService.handleDeviceAssigned(tenantId, applicationId, actor, requestedDevice);
-            return toResponse(assignmentRepository.save(assignment));
+            return toResponse(assignmentRepository.save(assignment), requestedDevice);
         }
     }
 
     @Transactional(readOnly = true)
     public InventoryDtos.InventoryDeviceAssignmentResponse getByApplication(String tenantId, String applicationId) {
         applicationService.getRequired(tenantId, applicationId);
-        return assignmentRepository.findByApplicationId(applicationId).map(InventoryAssignmentService::toResponse).orElse(null);
+        return assignmentRepository.findByApplicationId(applicationId)
+                .map(assignment -> toResponse(assignment, inventoryService.getRequiredDevice(tenantId, assignment.getDeviceId())))
+                .orElse(null);
     }
 
-    static InventoryDtos.InventoryDeviceAssignmentResponse toResponse(InventoryDeviceAssignment assignment) {
+    static InventoryDtos.InventoryDeviceAssignmentResponse toResponse(InventoryDeviceAssignment assignment, InventoryDevice device) {
         return new InventoryDtos.InventoryDeviceAssignmentResponse(
                 assignment.getId(),
                 assignment.getApplicationId(),
                 assignment.getDeviceId(),
+                device.getDeviceName(),
+                device.getImei1(),
+                device.getImei2(),
                 assignment.getAssignedBy(),
                 assignment.getAssignedAt());
     }

@@ -32,7 +32,7 @@ public class StatementAnalysis extends AuditableEntity {
     @Column(nullable = false, length = 50)
     private StatementAnalysisStatus status;
 
-    @Column(name = "source_document_id", nullable = false, length = 36)
+    @Column(name = "source_document_id", length = 36)
     private String sourceDocumentId;
 
     @Column(length = 1000)
@@ -49,6 +49,27 @@ public class StatementAnalysis extends AuditableEntity {
 
     @Column(length = 100)
     private String recommendation;
+
+    @Column(name = "provider_status", length = 100)
+    private String providerStatus;
+
+    @Column(name = "external_client_id", length = 100)
+    private String externalClientId;
+
+    @Column(name = "external_document_id", length = 100)
+    private String externalDocumentId;
+
+    @Column(name = "external_business_id", length = 100)
+    private String externalBusinessId;
+
+    @Column(name = "credit_score")
+    private Integer creditScore;
+
+    @Column(name = "risk_tier", length = 100)
+    private String riskTier;
+
+    @Column(name = "raw_provider_response", columnDefinition = "TEXT")
+    private String rawProviderResponse;
 
     @PrePersist
     void assignId() {
@@ -78,4 +99,18 @@ public class StatementAnalysis extends AuditableEntity {
     public void setAffordabilityScore(BigDecimal affordabilityScore) { this.affordabilityScore = affordabilityScore; }
     public String getRecommendation() { return recommendation; }
     public void setRecommendation(String recommendation) { this.recommendation = recommendation; }
+    public String getProviderStatus() { return providerStatus; }
+    public void setProviderStatus(String providerStatus) { this.providerStatus = providerStatus; }
+    public String getExternalClientId() { return externalClientId; }
+    public void setExternalClientId(String externalClientId) { this.externalClientId = externalClientId; }
+    public String getExternalDocumentId() { return externalDocumentId; }
+    public void setExternalDocumentId(String externalDocumentId) { this.externalDocumentId = externalDocumentId; }
+    public String getExternalBusinessId() { return externalBusinessId; }
+    public void setExternalBusinessId(String externalBusinessId) { this.externalBusinessId = externalBusinessId; }
+    public Integer getCreditScore() { return creditScore; }
+    public void setCreditScore(Integer creditScore) { this.creditScore = creditScore; }
+    public String getRiskTier() { return riskTier; }
+    public void setRiskTier(String riskTier) { this.riskTier = riskTier; }
+    public String getRawProviderResponse() { return rawProviderResponse; }
+    public void setRawProviderResponse(String rawProviderResponse) { this.rawProviderResponse = rawProviderResponse; }
 }

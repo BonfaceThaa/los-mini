@@ -7,5 +7,16 @@ public record AppSecurityProperties(
         String secret,
         String issuer,
         long accessTokenExpirationSeconds,
-        long refreshTokenExpirationSeconds) {
+        long refreshTokenExpirationSeconds,
+        String serviceSecret,
+        String serviceIssuer) {
+
+    public AppSecurityProperties {
+        if (serviceSecret == null || serviceSecret.isBlank()) {
+            serviceSecret = secret;
+        }
+        if (serviceIssuer == null || serviceIssuer.isBlank()) {
+            serviceIssuer = issuer;
+        }
+    }
 }

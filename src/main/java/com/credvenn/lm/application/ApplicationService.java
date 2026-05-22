@@ -12,6 +12,8 @@ import com.credvenn.lm.inventory.InventoryDeviceAssignmentRepository;
 import com.credvenn.lm.statement.StatementAnalysis;
 import com.credvenn.lm.statement.StatementAnalysisRepository;
 import com.credvenn.lm.statement.StatementAnalysisStatus;
+import com.credvenn.lm.subscription.SubscriptionBillingService;
+import com.credvenn.lm.subscription.SubscriptionGuardService;
 import com.credvenn.lm.tenant.Tenant;
 import com.credvenn.lm.tenant.TenantService;
 import java.math.BigDecimal;
@@ -39,6 +41,8 @@ public class ApplicationService {
     private final FineractGateway fineractGateway;
     private final InventoryDeviceAssignmentRepository assignmentRepository;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SubscriptionGuardService subscriptionGuardService;
+    private final SubscriptionBillingService subscriptionBillingService;
 
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
@@ -47,7 +51,9 @@ public class ApplicationService {
             TenantService tenantService,
             FineractGateway fineractGateway,
             InventoryDeviceAssignmentRepository assignmentRepository,
-            ApplicationEventPublisher applicationEventPublisher) {
+            ApplicationEventPublisher applicationEventPublisher,
+            SubscriptionGuardService subscriptionGuardService,
+            SubscriptionBillingService subscriptionBillingService) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
         this.statementAnalysisRepository = statementAnalysisRepository;
@@ -55,6 +61,8 @@ public class ApplicationService {
         this.fineractGateway = fineractGateway;
         this.assignmentRepository = assignmentRepository;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.subscriptionGuardService = subscriptionGuardService;
+        this.subscriptionBillingService = subscriptionBillingService;
     }
 
     @Transactional
@@ -62,6 +70,7 @@ public class ApplicationService {
             String tenantId,
             String actor,
             ApplicationDtos.CreateLoanRequestApplicationRequest request) {
+        subscriptionGuardService.assertCanCreateApplication(tenantId);
         log.info(
                 "Creating loan application for tenantId={} applicant={} {} phone={} nationalId={} requestedAmount={} requestedTermMonths={}",
                 tenantId,
@@ -240,6 +249,7 @@ public class ApplicationService {
             log.info("Activating Fineract loan fineractLoanId={}", application.getFineractLoanId());
             fineractGateway.activateLoan(tenant, application);
             changeStatus(application, ApplicationStatus.FINERACT_LOAN_ACTIVATED, actor, "Fineract loan activated");
+            subscriptionBillingService.evaluateNextCyclePricingMode(tenantId);
             return get(tenantId, applicationId);
         }
     }

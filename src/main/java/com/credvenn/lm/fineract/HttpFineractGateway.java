@@ -2,6 +2,7 @@ package com.credvenn.lm.fineract;
 
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.tenant.Tenant;
 import java.math.BigDecimal;
@@ -9,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -31,7 +34,7 @@ public class HttpFineractGateway implements FineractGateway {
     private final RestClient restClient;
     private final FineractProperties properties;
 
-    public HttpFineractGateway(RestClient fineractRestClient, FineractProperties properties) {
+    public HttpFineractGateway(@Qualifier("fineractRestClient") RestClient fineractRestClient, FineractProperties properties) {
         this.restClient = fineractRestClient;
         this.properties = properties;
     }
@@ -87,6 +90,98 @@ public class HttpFineractGateway implements FineractGateway {
                 .toList();
         log.info("Fetched {} active Fineract loan products for tenantFineractId={}", products.size(), tenant.getFineractTenantId());
         return products;
+    }
+
+    @Override
+    public List<FineractClient> fetchClients(Tenant tenant) {
+        log.info("Fetching Fineract clients for tenantFineractId={}", tenant.getFineractTenantId());
+        Object response = restClient.get()
+                .uri("/clients")
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (response instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    items.add((Map<String, Object>) map);
+                }
+            }
+        } else if (response instanceof Map<?, ?> map) {
+            Object pageItems = map.get("pageItems");
+            if (pageItems instanceof List<?> list) {
+                for (Object item : list) {
+                    if (item instanceof Map<?, ?> child) {
+                        items.add((Map<String, Object>) child);
+                    }
+                }
+            }
+        }
+        List<FineractClient> clients = items.stream().map(this::toClient).toList();
+        log.info("Fetched {} Fineract clients for tenantFineractId={}", clients.size(), tenant.getFineractTenantId());
+        return clients;
+    }
+
+    @Override
+    public FineractClient fetchClient(Tenant tenant, String fineractClientId) {
+        log.info("Fetching Fineract client fineractClientId={} tenantFineractId={}", fineractClientId, tenant.getFineractTenantId());
+        Object response = restClient.get()
+                .uri("/clients/{clientId}", fineractClientId)
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        if (response instanceof Map<?, ?> map) {
+            return toClient((Map<String, Object>) map);
+        }
+        throw new NotFoundException("Fineract client not found");
+    }
+
+    @Override
+    public String createLoanProduct(Tenant tenant, CreateLoanProductRequest request) {
+        log.info("Creating Fineract loan product name={} currencyCode={} numberOfRepayments={}", request.name(), request.currencyCode(), request.numberOfRepayments());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", request.name());
+        payload.put("shortName", request.shortName());
+        payload.put("description", request.description());
+        payload.put("currencyCode", request.currencyCode());
+        payload.put("digitsAfterDecimal", 2);
+        payload.put("inMultiplesOf", 1);
+        payload.put("principal", request.principal());
+        payload.put("minPrincipal", request.minPrincipal());
+        payload.put("maxPrincipal", request.maxPrincipal());
+        payload.put("numberOfRepayments", request.numberOfRepayments());
+        payload.put("minNumberOfRepayments", request.numberOfRepayments());
+        payload.put("maxNumberOfRepayments", request.numberOfRepayments());
+        payload.put("repaymentEvery", request.repaymentEvery());
+        payload.put("repaymentFrequencyType", request.repaymentFrequencyType());
+        payload.put("interestRatePerPeriod", request.interestRatePerPeriod());
+        payload.put("interestRateFrequencyType", request.interestRateFrequencyType());
+        payload.put("amortizationType", request.amortizationType());
+        payload.put("interestType", request.interestType());
+        payload.put("interestCalculationPeriodType", request.interestCalculationPeriodType());
+        payload.put("transactionProcessingStrategyCode",
+                request.transactionProcessingStrategyCode() == null || request.transactionProcessingStrategyCode().isBlank()
+                        ? properties.transactionProcessingStrategyCode()
+                        : request.transactionProcessingStrategyCode());
+        payload.put("accountingRule", 2);
+        payload.put("loanPortfolioAccountId", request.loanPortfolioAccountId());
+        payload.put("fundSourceAccountId", request.fundSourceAccountId());
+        payload.put("interestOnLoanAccountId", request.interestOnLoanAccountId());
+        payload.put("incomeFromFeeAccountId", request.incomeFromFeeAccountId());
+        payload.put("incomeFromPenaltyAccountId", request.incomeFromPenaltyAccountId());
+        payload.put("incomeFromRecoveryAccountId", request.incomeFromRecoveryAccountId());
+        payload.put("writeOffAccountId", request.writeOffAccountId());
+        payload.put("transfersInSuspenseAccountId", request.transfersInSuspenseAccountId());
+        payload.put("overpaymentLiabilityAccountId", request.overpaymentLiabilityAccountId());
+        payload.put("dateFormat", properties.dateFormat());
+        payload.put("locale", properties.locale());
+        payload.put("isInterestRecalculationEnabled", false);
+        payload.put("daysInMonthType", 1);
+        payload.put("daysInYearType", 1);
+        Map<?, ?> response = post("/loanproducts", tenant, payload);
+        String resourceId = extractResourceId(response);
+        log.info("Created Fineract loan product resourceId={}", resourceId);
+        return resourceId;
     }
 
     @Override
@@ -199,6 +294,97 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     @Override
+    public LoanPage fetchLoansPage(Tenant tenant, int offset, int limit) {
+        Object response = restClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/loans")
+                        .queryParam("offset", offset)
+                        .queryParam("limit", limit)
+                        .build())
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        List<Map<String, Object>> items = extractItems(response, "pageItems", "content", "loans");
+        List<LoanPageItem> loans = items.stream()
+                .map(this::toLoanPageItem)
+                .toList();
+        boolean hasNext = loans.size() >= limit;
+        return new LoanPage(loans, offset, limit, hasNext);
+    }
+
+    @Override
+    public LoanCollectionsSnapshot fetchLoanCollectionsSnapshot(Tenant tenant, String fineractLoanId) {
+        Object response = restClient.get()
+                .uri("/loans/{loanId}?associations=repaymentSchedule", fineractLoanId)
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        if (!(response instanceof Map<?, ?> map)) {
+            return new LoanCollectionsSnapshot(fineractLoanId, false, false, null, 0, null, List.of());
+        }
+        Map<?, ?> status = map.get("status") instanceof Map<?, ?> statusMap ? statusMap : Map.of();
+        boolean active = Boolean.TRUE.equals(status.get("active"));
+        Object repaymentScheduleValue = map.get("repaymentSchedule");
+        List<InstallmentSnapshot> installments = new ArrayList<>();
+        LocalDate oldestOverdueDate = null;
+        LocalDate nextDueDate = null;
+        LocalDate today = LocalDate.now();
+        if (repaymentScheduleValue instanceof Map<?, ?> repaymentSchedule
+                && repaymentSchedule.get("periods") instanceof List<?> periods) {
+            int index = 0;
+            for (Object item : periods) {
+                if (!(item instanceof Map<?, ?> period)) {
+                    continue;
+                }
+                index++;
+                LocalDate dueDate = localDate(period.get("dueDate"));
+                if (dueDate == null) {
+                    continue;
+                }
+                BigDecimal dueAmount = decimal(firstNonNull(
+                        period.get("totalDueForPeriod"),
+                        period.get("totalOriginalDueForPeriod"),
+                        period.get("totalInstallmentAmountForPeriod")));
+                BigDecimal paidAmount = decimal(firstNonNull(
+                        period.get("totalPaidForPeriod"),
+                        period.get("totalPaidInAdvanceForPeriod"),
+                        period.get("totalPaidLateForPeriod")));
+                BigDecimal outstandingAmount = decimal(firstNonNull(
+                        period.get("totalOutstandingForPeriod"),
+                        period.get("totalOutstandingLoanBalance"),
+                        period.get("outstandingPrincipalBalance")));
+                boolean fullyPaid = Boolean.TRUE.equals(period.get("complete"))
+                        || Boolean.TRUE.equals(period.get("fullyPaid"))
+                        || (outstandingAmount != null && outstandingAmount.compareTo(BigDecimal.ZERO) <= 0);
+                boolean overdue = !fullyPaid && dueDate.isBefore(today);
+                if (!fullyPaid && nextDueDate == null && !dueDate.isBefore(today)) {
+                    nextDueDate = dueDate;
+                }
+                if (overdue && (oldestOverdueDate == null || dueDate.isBefore(oldestOverdueDate))) {
+                    oldestOverdueDate = dueDate;
+                }
+                installments.add(new InstallmentSnapshot(
+                        index,
+                        dueDate,
+                        dueAmount,
+                        paidAmount,
+                        outstandingAmount,
+                        overdue,
+                        fullyPaid));
+            }
+        }
+        boolean hasOverdue = oldestOverdueDate != null;
+        long daysOverdue = hasOverdue ? ChronoUnit.DAYS.between(oldestOverdueDate, today) : 0;
+        return new LoanCollectionsSnapshot(
+                fineractLoanId,
+                active,
+                hasOverdue,
+                oldestOverdueDate,
+                daysOverdue,
+                nextDueDate,
+                installments);
+    }
+
+    @Override
     public List<LoanRepayment> fetchLoanRepayments(Tenant tenant, String fineractLoanId) {
         log.info("Fetching Fineract loan repayments fineractLoanId={} tenantFineractId={}", fineractLoanId, tenant.getFineractTenantId());
         Object response = restClient.get()
@@ -206,29 +392,7 @@ public class HttpFineractGateway implements FineractGateway {
                 .headers(headers -> applyHeaders(headers, tenant))
                 .retrieve()
                 .body(Object.class);
-        List<Map<String, Object>> items = new ArrayList<>();
-        if (response instanceof List<?> list) {
-            for (Object item : list) {
-                if (item instanceof Map<?, ?> map) {
-                    items.add((Map<String, Object>) map);
-                }
-            }
-        } else if (response instanceof Map<?, ?> map) {
-            Object pageItems = map.get("pageItems");
-            if (pageItems instanceof List<?> list) {
-                for (Object item : list) {
-                    if (item instanceof Map<?, ?> child) {
-                        items.add((Map<String, Object>) child);
-                    }
-                }
-            } else if (map.get("transactions") instanceof List<?> transactions) {
-                for (Object item : transactions) {
-                    if (item instanceof Map<?, ?> child) {
-                        items.add((Map<String, Object>) child);
-                    }
-                }
-            }
-        }
+        List<Map<String, Object>> items = extractItems(response, "content", "pageItems", "transactions");
         List<LoanRepayment> repayments = items.stream()
                 .filter(this::isRepaymentTransaction)
                 .map(this::toLoanRepayment)
@@ -263,6 +427,34 @@ public class HttpFineractGateway implements FineractGateway {
                 .body(payload)
                 .retrieve()
                 .body(Map.class);
+    }
+
+    private List<Map<String, Object>> extractItems(Object response, String... keys) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (response instanceof List<?> list) {
+            addMaps(items, list);
+            return items;
+        }
+        if (response instanceof Map<?, ?> map) {
+            for (String key : keys) {
+                Object value = map.get(key);
+                if (value instanceof List<?> list) {
+                    addMaps(items, list);
+                    if (!items.isEmpty()) {
+                        return items;
+                    }
+                }
+            }
+        }
+        return items;
+    }
+
+    private void addMaps(List<Map<String, Object>> items, List<?> list) {
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                items.add((Map<String, Object>) map);
+            }
+        }
     }
 
     private void applyHeaders(HttpHeaders headers, Tenant tenant) {
@@ -301,6 +493,31 @@ public class HttpFineractGateway implements FineractGateway {
                 integer(item.get("numberOfRepayments")),
                 currencyCode(item.get("currency")),
                 Boolean.TRUE.equals(item.getOrDefault("active", Boolean.TRUE)));
+    }
+
+    private FineractClient toClient(Map<String, Object> item) {
+        Map<?, ?> status = item.get("status") instanceof Map<?, ?> statusMap ? statusMap : Map.of();
+        return new FineractClient(
+                text(item.get("id")),
+                text(item.get("accountNo")),
+                text(item.get("externalId")),
+                text(status.get("value")),
+                Boolean.TRUE.equals(item.get("active")) || Boolean.TRUE.equals(status.get("active")),
+                text(item.get("firstname")),
+                text(item.get("middlename")),
+                text(item.get("lastname")),
+                text(item.get("displayName")),
+                text(item.get("mobileNo")),
+                text(item.get("officeName")));
+    }
+
+    private LoanPageItem toLoanPageItem(Map<String, Object> item) {
+        Map<?, ?> status = item.get("status") instanceof Map<?, ?> statusMap ? statusMap : Map.of();
+        boolean active = Boolean.TRUE.equals(status.get("active")) || Boolean.TRUE.equals(item.get("active"));
+        return new LoanPageItem(
+                text(item.get("id")),
+                active,
+                text(status.get("code")));
     }
 
     private LoanRepayment toLoanRepayment(Map<String, Object> item) {
@@ -346,6 +563,15 @@ public class HttpFineractGateway implements FineractGateway {
         return value == null ? null : new BigDecimal(String.valueOf(value));
     }
 
+    private Object firstNonNull(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private Integer integer(Object value) {
         if (value == null) {
             return null;
@@ -381,6 +607,22 @@ public class HttpFineractGateway implements FineractGateway {
             int day = integer(parts.get(2));
             return LocalDate.of(year, month, day).atStartOfDay().toInstant(ZoneOffset.UTC);
         }
+        if (value instanceof String text && !text.isBlank()) {
+            return LocalDate.parse(text.trim()).atStartOfDay().toInstant(ZoneOffset.UTC);
+        }
+        return null;
+    }
+
+    private LocalDate localDate(Object value) {
+        if (value instanceof List<?> parts && parts.size() >= 3) {
+            int year = integer(parts.get(0));
+            int month = integer(parts.get(1));
+            int day = integer(parts.get(2));
+            return LocalDate.of(year, month, day);
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return LocalDate.parse(text.trim());
+        }
         return null;
     }
 
@@ -396,5 +638,19 @@ public class HttpFineractGateway implements FineractGateway {
         int fallback = approvedTermMonths == null ? numberOfRepayments : approvedTermMonths;
         long suggested = (long) repaymentEvery * numberOfRepayments;
         return (int) Math.max(fallback, suggested);
+    }
+
+    private BigDecimal annualInterestRate(BigDecimal interestRatePerPeriod, Integer interestRateFrequencyType) {
+        if (interestRatePerPeriod == null) {
+            return BigDecimal.ZERO;
+        }
+        int multiplier = switch (interestRateFrequencyType == null ? 2 : interestRateFrequencyType) {
+            case 0, 1 -> 365;
+            case 2 -> 12;
+            case 3 -> 52;
+            case 4 -> 1;
+            default -> 12;
+        };
+        return interestRatePerPeriod.multiply(BigDecimal.valueOf(multiplier));
     }
 }

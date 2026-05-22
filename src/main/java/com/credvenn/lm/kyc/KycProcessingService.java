@@ -4,6 +4,7 @@ import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.fineract.FineractGateway;
+import com.credvenn.lm.subscription.SubscriptionBillingService;
 import com.credvenn.lm.tenant.Tenant;
 import com.credvenn.lm.tenant.TenantService;
 import org.slf4j.Logger;
@@ -22,18 +23,21 @@ public class KycProcessingService {
     private final ApplicationService applicationService;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
+    private final SubscriptionBillingService subscriptionBillingService;
 
     public KycProcessingService(
             KycCheckRepository kycCheckRepository,
             KycProviderRegistry kycProviderRegistry,
             ApplicationService applicationService,
             TenantService tenantService,
-            FineractGateway fineractGateway) {
+            FineractGateway fineractGateway,
+            SubscriptionBillingService subscriptionBillingService) {
         this.kycCheckRepository = kycCheckRepository;
         this.kycProviderRegistry = kycProviderRegistry;
         this.applicationService = applicationService;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
+        this.subscriptionBillingService = subscriptionBillingService;
     }
 
     @Async
@@ -59,6 +63,7 @@ public class KycProcessingService {
             if (decision.status() == KycStatus.PASSED) {
                 Tenant tenant = tenantService.getRequiredTenant(tenantId);
                 String fineractClientId = fineractGateway.createClient(tenant, application);
+                subscriptionBillingService.chargeKycSuccess(tenantId, check.getId(), actor);
                 applicationService.handleKycPassed(tenantId, applicationId, actor, fineractClientId);
             } else if (decision.status() == KycStatus.MANUAL_REVIEW_REQUIRED) {
                 applicationService.handleKycManualReview(tenantId, applicationId, actor, "KYC requires manual review");

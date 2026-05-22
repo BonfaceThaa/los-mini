@@ -14,6 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RoleService {
 
+    private static final Set<String> HIDDEN_TENANT_PERMISSION_CODES = Set.of(
+            PermissionCatalog.TENANT_CREATE.code(),
+            PermissionCatalog.TENANT_MANAGE_ALL.code(),
+            PermissionCatalog.TENANT_SUBSCRIPTION_MANAGE.code(),
+            PermissionCatalog.TENANT_VIEW_ALL.code());
+
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
     private final CurrentActorService currentActorService;
@@ -130,6 +136,7 @@ public class RoleService {
     @Transactional(readOnly = true)
     public List<RoleDtos.PermissionResponse> listPermissions() {
         return permissionRepository.findAllByOrderByCodeAsc().stream()
+                .filter(permission -> !HIDDEN_TENANT_PERMISSION_CODES.contains(permission.getCode()))
                 .map(permission -> new RoleDtos.PermissionResponse(permission.getCode(), permission.getDescription()))
                 .toList();
     }
@@ -150,6 +157,9 @@ public class RoleService {
         Set<String> normalized = permissionCodes.stream().map(String::trim).map(String::toUpperCase).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         if (!PermissionCatalog.allCodes().containsAll(normalized)) {
             throw new BadRequestException("Only fixed seeded permissions are allowed");
+        }
+        if (normalized.stream().anyMatch(HIDDEN_TENANT_PERMISSION_CODES::contains)) {
+            throw new BadRequestException("One or more requested permissions are not assignable to tenant roles");
         }
         List<Permission> permissions = permissionRepository.findAllByCodeIn(normalized);
         if (permissions.size() != normalized.size()) {
@@ -193,6 +203,7 @@ public class RoleService {
                 role.getCreatedAt(),
                 role.getUpdatedAt(),
                 role.getPermissions().stream()
+                        .filter(permission -> !HIDDEN_TENANT_PERMISSION_CODES.contains(permission.getCode()))
                         .map(permission -> new RoleDtos.PermissionResponse(permission.getCode(), permission.getDescription()))
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
     }

@@ -3,6 +3,7 @@ package com.credvenn.lm.subscription;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.security.CurrentActorService;
 import com.credvenn.lm.tenant.TenantRepository;
+import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,18 +16,21 @@ public class TenantSubscriptionService {
     private final TenantRepository tenantRepository;
     private final SubscriptionPolicy subscriptionPolicy;
     private final CurrentActorService currentActorService;
+    private final SubscriptionBillingService subscriptionBillingService;
 
     public TenantSubscriptionService(
             TenantSubscriptionRepository tenantSubscriptionRepository,
             SubscriptionPlanService subscriptionPlanService,
             TenantRepository tenantRepository,
             SubscriptionPolicy subscriptionPolicy,
-            CurrentActorService currentActorService) {
+            CurrentActorService currentActorService,
+            SubscriptionBillingService subscriptionBillingService) {
         this.tenantSubscriptionRepository = tenantSubscriptionRepository;
         this.subscriptionPlanService = subscriptionPlanService;
         this.tenantRepository = tenantRepository;
         this.subscriptionPolicy = subscriptionPolicy;
         this.currentActorService = currentActorService;
+        this.subscriptionBillingService = subscriptionBillingService;
     }
 
     @Transactional
@@ -49,10 +53,22 @@ public class TenantSubscriptionService {
         subscription.setPricingMode(SubscriptionPricingMode.FIXED_MONTHLY);
         subscription.setCurrentPeriodStart(request.currentPeriodStart());
         subscription.setCurrentPeriodEnd(request.currentPeriodEnd());
+        subscription.setPrepaidBalance(BigDecimal.ZERO);
+        subscription.setTotalCredited(BigDecimal.ZERO);
+        subscription.setTotalDebited(BigDecimal.ZERO);
         subscription.setOperationalNotes(request.operationalNotes());
         subscription.setCreatedBy(actor);
         subscription.setUpdatedBy(actor);
-        return toResponse(tenantSubscriptionRepository.save(subscription), plan);
+        subscription = tenantSubscriptionRepository.save(subscription);
+        if (request.initialPrepaidAmount().signum() > 0) {
+            subscriptionBillingService.topUpPrepaid(
+                    tenantId,
+                    subscription.getId(),
+                    request.initialPrepaidAmount(),
+                    "Initial prepaid funding",
+                    actor);
+        }
+        return toResponse(subscription, plan);
     }
 
     @Transactional
@@ -62,6 +78,8 @@ public class TenantSubscriptionService {
         subscriptionPolicy.validateBillingPeriod(request.currentPeriodStart(), request.currentPeriodEnd());
         String actor = currentActorService.requireCurrentUser().username();
         TenantSubscription subscription = getRequiredEntity(tenantId, subscriptionId);
+        SubscriptionPricingMode scheduledPricingMode = subscription.getNextPricingMode();
+        java.time.Instant scheduledEffectiveAt = subscription.getNextPricingModeEffectiveAt();
         if (request.status() == TenantSubscriptionStatus.ACTIVE) {
             tenantSubscriptionRepository.findFirstByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, TenantSubscriptionStatus.ACTIVE)
                     .filter(existing -> !existing.getId().equals(subscriptionId))
@@ -76,6 +94,17 @@ public class TenantSubscriptionService {
         subscription.setStatus(request.status());
         subscription.setOperationalNotes(request.operationalNotes());
         subscription.setUpdatedBy(actor);
+        if (scheduledPricingMode != null
+                && scheduledEffectiveAt != null
+                && !request.currentPeriodStart().isBefore(scheduledEffectiveAt)) {
+            subscription.setPricingMode(scheduledPricingMode);
+            subscription.setSwitchedToInterestShareAt(request.currentPeriodStart());
+            subscription.setNextPricingMode(null);
+            subscription.setNextPricingModeEffectiveAt(null);
+        } else {
+            subscription.setNextPricingMode(scheduledPricingMode);
+            subscription.setNextPricingModeEffectiveAt(scheduledEffectiveAt);
+        }
         return toResponse(subscription, plan);
     }
 
@@ -127,9 +156,14 @@ public class TenantSubscriptionService {
                 plan.getName(),
                 subscription.getStatus(),
                 subscription.getPricingMode(),
+                subscription.getNextPricingMode(),
                 subscription.getCurrentPeriodStart(),
                 subscription.getCurrentPeriodEnd(),
                 subscription.getSwitchedToInterestShareAt(),
+                subscription.getNextPricingModeEffectiveAt(),
+                subscription.getPrepaidBalance(),
+                subscription.getTotalCredited(),
+                subscription.getTotalDebited(),
                 subscription.getOperationalNotes(),
                 subscription.getCreatedBy(),
                 subscription.getUpdatedBy(),

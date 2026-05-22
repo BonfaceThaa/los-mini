@@ -1,9 +1,13 @@
 package com.credvenn.lm.statement;
 
 import com.credvenn.lm.application.ApplicationService;
+import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
+import com.credvenn.lm.subscription.SubscriptionBillingService;
+import java.math.BigDecimal;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -19,21 +23,24 @@ public class StatementAnalysisProcessingService {
     private final StatementProviderRegistry statementProviderRegistry;
     private final ApplicationService applicationService;
     private final DocumentService documentService;
+    private final SubscriptionBillingService subscriptionBillingService;
 
     public StatementAnalysisProcessingService(
             StatementAnalysisRepository statementAnalysisRepository,
             StatementProviderRegistry statementProviderRegistry,
             ApplicationService applicationService,
-            DocumentService documentService) {
+            DocumentService documentService,
+            SubscriptionBillingService subscriptionBillingService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
         this.documentService = documentService;
+        this.subscriptionBillingService = subscriptionBillingService;
     }
 
     @Async
     @Transactional
-    public void process(String tenantId, String applicationId, String documentId, String actor) {
+    public void process(String tenantId, String applicationId, String documentId, String actor, String simulateOutcome) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             log.info(
                     "Starting asynchronous statement analysis using provider={} documentId={}",
@@ -42,36 +49,106 @@ public class StatementAnalysisProcessingService {
             applicationService.handleStatementInProgress(tenantId, applicationId, actor);
             ApplicationDocument document = documentService.getRequired(tenantId, documentId);
             StatementAnalysis analysis = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId).orElseGet(StatementAnalysis::new);
+            StatementAnalysisProvider provider = statementProviderRegistry.currentProvider();
             analysis.setTenantId(tenantId);
             analysis.setApplicationId(applicationId);
             analysis.setSourceDocumentId(documentId);
-            analysis.setProvider(statementProviderRegistry.currentProvider().providerCode());
+            analysis.setProvider(normalizeSimulateOutcome(simulateOutcome) == null ? provider.providerCode() : "SIMULATED");
             analysis.setStatus(StatementAnalysisStatus.IN_PROGRESS);
             statementAnalysisRepository.save(analysis);
 
             var application = applicationService.getRequired(tenantId, applicationId);
-            StatementAnalysisProvider.StatementDecision decision = statementProviderRegistry.currentProvider().analyze(application, document);
-            analysis.setStatus(decision.status());
-            analysis.setAverageMonthlyInflow(decision.averageMonthlyInflow());
-            analysis.setAverageMonthlyOutflow(decision.averageMonthlyOutflow());
-            analysis.setAffordabilityScore(decision.affordabilityScore());
-            analysis.setRecommendation(decision.recommendation());
-            analysis.setSummary(decision.summary());
-            log.info(
-                    "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
-                    decision.status(),
-                    decision.affordabilityScore(),
-                    decision.recommendation());
-            if (decision.status() == StatementAnalysisStatus.PASSED) {
-                applicationService.handleStatementPassed(tenantId, applicationId, actor);
-            } else if (decision.status() == StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED) {
-                applicationService.handleStatementManualReview(tenantId, applicationId, actor, "Statement analysis requires manual review");
-            } else {
-                applicationService.handleStatementFailed(tenantId, applicationId, actor, "Statement analysis failed");
+            StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
+            if (simulatedDecision != null) {
+                applyDecision(tenantId, applicationId, actor, analysis, simulatedDecision);
+                return;
             }
+            if (provider.supportsAsyncWebhookCompletion()) {
+                StatementAnalysisSubmission submission = provider.submit(application, document);
+                analysis.setProvider(submission.provider());
+                analysis.setProviderStatus(submission.providerStatus());
+                analysis.setExternalClientId(submission.externalClientId());
+                analysis.setExternalDocumentId(submission.externalDocumentId());
+                analysis.setExternalBusinessId(submission.externalBusinessId());
+                analysis.setSummary(submission.summary());
+                analysis.setRawProviderResponse(submission.rawProviderResponse());
+                log.info(
+                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={}",
+                        submission.provider(),
+                        submission.externalClientId(),
+                        submission.externalDocumentId());
+                return;
+            }
+            applyDecision(tenantId, applicationId, actor, analysis, provider.analyze(application, document));
         } catch (RuntimeException ex) {
             log.error("Asynchronous statement analysis failed", ex);
             throw ex;
         }
+    }
+
+    private void applyDecision(
+            String tenantId,
+            String applicationId,
+            String actor,
+            StatementAnalysis analysis,
+            StatementAnalysisProvider.StatementDecision decision) {
+        analysis.setStatus(decision.status());
+        analysis.setAverageMonthlyInflow(decision.averageMonthlyInflow());
+        analysis.setAverageMonthlyOutflow(decision.averageMonthlyOutflow());
+        analysis.setAffordabilityScore(decision.affordabilityScore());
+        analysis.setRecommendation(decision.recommendation());
+        analysis.setSummary(decision.summary());
+        log.info(
+                "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
+                decision.status(),
+                decision.affordabilityScore(),
+                decision.recommendation());
+        if (decision.status() == StatementAnalysisStatus.PASSED) {
+            subscriptionBillingService.chargeStatementSuccess(tenantId, analysis.getId(), actor);
+            applicationService.handleStatementPassed(tenantId, applicationId, actor);
+        } else if (decision.status() == StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED) {
+            applicationService.handleStatementManualReview(tenantId, applicationId, actor, "Statement analysis requires manual review");
+        } else {
+            applicationService.handleStatementFailed(tenantId, applicationId, actor, "Statement analysis failed");
+        }
+    }
+
+    private StatementAnalysisProvider.StatementDecision simulatedDecision(String simulateOutcome) {
+        String normalized = normalizeSimulateOutcome(simulateOutcome);
+        if (normalized == null) {
+            return null;
+        }
+        return switch (normalized) {
+            case "PASSED", "PASS" -> new StatementAnalysisProvider.StatementDecision(
+                    StatementAnalysisStatus.PASSED,
+                    BigDecimal.valueOf(5000),
+                    BigDecimal.valueOf(2400),
+                    BigDecimal.valueOf(82),
+                    "APPROVE",
+                    "Forced simulated statement pass");
+            case "FAILED", "FAIL" -> new StatementAnalysisProvider.StatementDecision(
+                    StatementAnalysisStatus.FAILED,
+                    BigDecimal.valueOf(1000),
+                    BigDecimal.valueOf(950),
+                    BigDecimal.valueOf(20),
+                    "DECLINE",
+                    "Forced simulated statement failure");
+            case "MANUAL_REVIEW_REQUIRED", "MANUAL_REVIEW", "REVIEW" -> new StatementAnalysisProvider.StatementDecision(
+                    StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED,
+                    BigDecimal.valueOf(2000),
+                    BigDecimal.valueOf(1600),
+                    BigDecimal.valueOf(45),
+                    "REVIEW",
+                    "Forced simulated statement manual review");
+            default -> throw new BadRequestException("Unsupported simulateOutcome. Use PASSED, FAILED, or MANUAL_REVIEW_REQUIRED");
+        };
+    }
+
+    private String normalizeSimulateOutcome(String simulateOutcome) {
+        if (simulateOutcome == null) {
+            return null;
+        }
+        String normalized = simulateOutcome.trim().toUpperCase(Locale.ROOT);
+        return normalized.isBlank() ? null : normalized;
     }
 }

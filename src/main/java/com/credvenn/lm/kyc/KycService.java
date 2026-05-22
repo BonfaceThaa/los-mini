@@ -5,6 +5,7 @@ import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.fineract.FineractGateway;
+import com.credvenn.lm.subscription.SubscriptionBillingService;
 import com.credvenn.lm.tenant.TenantService;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -22,18 +23,21 @@ public class KycService {
     private final ApplicationService applicationService;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
+    private final SubscriptionBillingService subscriptionBillingService;
 
     public KycService(
             KycCheckRepository kycCheckRepository,
             KycProcessingService processingService,
             ApplicationService applicationService,
             TenantService tenantService,
-            FineractGateway fineractGateway) {
+            FineractGateway fineractGateway,
+            SubscriptionBillingService subscriptionBillingService) {
         this.kycCheckRepository = kycCheckRepository;
         this.processingService = processingService;
         this.applicationService = applicationService;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
+        this.subscriptionBillingService = subscriptionBillingService;
     }
 
     @Transactional
@@ -86,6 +90,7 @@ public class KycService {
                 if (fineractClientId == null || fineractClientId.isBlank()) {
                     fineractClientId = fineractGateway.createClient(tenantService.getRequiredTenant(tenantId), application);
                 }
+                subscriptionBillingService.chargeKycSuccess(tenantId, check.getId(), actor);
                 applicationService.handleKycPassed(tenantId, applicationId, actor, fineractClientId);
             } else {
                 check.setStatus(KycStatus.MANUALLY_REJECTED);

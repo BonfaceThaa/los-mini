@@ -1,0 +1,48 @@
+package com.credvenn.lm.payment;
+
+import com.credvenn.lm.common.exception.BadRequestException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Map;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+@Component
+public class HttpDarajaAccessTokenGateway implements DarajaAccessTokenGateway {
+
+    private final RestClient.Builder restClientBuilder;
+
+    public HttpDarajaAccessTokenGateway(RestClient.Builder restClientBuilder) {
+        this.restClientBuilder = restClientBuilder;
+    }
+
+    @Override
+    public String fetchAccessToken(TenantMpesaIntegrationConfig config) {
+        String credentials = config.encryptedConsumerKey() + ":" + config.encryptedConsumerSecret();
+        Map<?, ?> response = restClientBuilder
+                .baseUrl(baseUrl(config.environment()))
+                .build()
+                .get()
+                .uri("/oauth/v1/generate?grant_type=client_credentials")
+                .headers(headers -> {
+                    headers.set(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder()
+                            .encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
+                    headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
+                })
+                .retrieve()
+                .body(Map.class);
+        Object accessToken = response == null ? null : response.get("access_token");
+        if (accessToken == null) {
+            throw new BadRequestException("Daraja access token response did not include access_token");
+        }
+        return String.valueOf(accessToken);
+    }
+
+    static String baseUrl(DarajaEnvironment environment) {
+        return environment == DarajaEnvironment.PRODUCTION
+                ? "https://api.safaricom.co.ke"
+                : "https://sandbox.safaricom.co.ke";
+    }
+}

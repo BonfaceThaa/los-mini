@@ -44,6 +44,12 @@ public class SubscriptionPlan extends AuditableEntity {
     @Column(name = "interest_share_percentage", nullable = false, precision = 10, scale = 2)
     private BigDecimal interestSharePercentage;
 
+    @Column(name = "kyc_success_cost", nullable = false, precision = 19, scale = 2)
+    private BigDecimal kycSuccessCost;
+
+    @Column(name = "statement_success_cost", nullable = false, precision = 19, scale = 2)
+    private BigDecimal statementSuccessCost;
+
     @Column(nullable = false, length = 10)
     private String currency;
 
@@ -145,6 +151,22 @@ public class SubscriptionPlan extends AuditableEntity {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public BigDecimal getKycSuccessCost() {
+        return kycSuccessCost;
+    }
+
+    public void setKycSuccessCost(BigDecimal kycSuccessCost) {
+        this.kycSuccessCost = kycSuccessCost;
+    }
+
+    public BigDecimal getStatementSuccessCost() {
+        return statementSuccessCost;
+    }
+
+    public void setStatementSuccessCost(BigDecimal statementSuccessCost) {
+        this.statementSuccessCost = statementSuccessCost;
     }
 
     public boolean isActive() {

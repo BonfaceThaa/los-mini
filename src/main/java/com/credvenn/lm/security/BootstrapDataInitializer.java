@@ -1,5 +1,6 @@
 package com.credvenn.lm.security;
 
+import com.credvenn.lm.tenant.TenantRepository;
 import com.credvenn.lm.user.AppUser;
 import com.credvenn.lm.user.AppUserRepository;
 import java.util.LinkedHashSet;
@@ -19,18 +20,24 @@ public class BootstrapDataInitializer implements ApplicationRunner {
     private final AppUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final BootstrapSuperAdminProperties bootstrapSuperAdminProperties;
+    private final TenantRepository tenantRepository;
+    private final RoleTemplateService roleTemplateService;
 
     public BootstrapDataInitializer(
             PermissionRepository permissionRepository,
             RoleRepository roleRepository,
             AppUserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            BootstrapSuperAdminProperties bootstrapSuperAdminProperties) {
+            BootstrapSuperAdminProperties bootstrapSuperAdminProperties,
+            TenantRepository tenantRepository,
+            RoleTemplateService roleTemplateService) {
         this.permissionRepository = permissionRepository;
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.bootstrapSuperAdminProperties = bootstrapSuperAdminProperties;
+        this.tenantRepository = tenantRepository;
+        this.roleTemplateService = roleTemplateService;
     }
 
     @Override
@@ -53,6 +60,7 @@ public class BootstrapDataInitializer implements ApplicationRunner {
                         PermissionCatalog.STATEMENT_INBOX_VIEW.code(),
                         PermissionCatalog.STATEMENT_INBOX_RESOLVE.code(),
                         PermissionCatalog.STATEMENT_INBOUND_INGEST.code()));
+        tenantRepository.findAll().forEach(tenant -> roleTemplateService.provisionTenantRoles(tenant.getId()));
         ensureBootstrapSuperAdmin(superAdminRole);
     }
 

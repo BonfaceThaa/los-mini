@@ -1,0 +1,33 @@
+CREATE TABLE loan_product_mappings (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    product_code VARCHAR(100) NOT NULL,
+    display_name VARCHAR(255) NOT NULL,
+    short_name VARCHAR(100) NOT NULL,
+    description VARCHAR(1000),
+    currency_code VARCHAR(10) NOT NULL,
+    principal_min DECIMAL(19,2) NOT NULL,
+    principal_default_amount DECIMAL(19,2) NOT NULL,
+    principal_max DECIMAL(19,2) NOT NULL,
+    number_of_repayments INT NOT NULL,
+    repayment_every INT NOT NULL,
+    repayment_frequency VARCHAR(50) NOT NULL,
+    interest_rate_per_period DECIMAL(10,4) NOT NULL,
+    interest_type VARCHAR(50) NOT NULL,
+    interest_calculation_period_type VARCHAR(50) NOT NULL,
+    interest_rate_frequency VARCHAR(50) NOT NULL,
+    amortization_type VARCHAR(50) NOT NULL,
+    transaction_processing_strategy_code VARCHAR(100) NOT NULL,
+    accounting_template_code VARCHAR(100) NOT NULL,
+    fineract_product_id BIGINT NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by VARCHAR(255) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_loan_product_mappings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+    UNIQUE (tenant_id, product_code),
+    UNIQUE (tenant_id, fineract_product_id)
+);
+
+CREATE INDEX idx_loan_product_mappings_tenant_code ON loan_product_mappings (tenant_id, product_code);

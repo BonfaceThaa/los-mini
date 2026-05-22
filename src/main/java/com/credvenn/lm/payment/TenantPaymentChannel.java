@@ -34,6 +34,9 @@ public class TenantPaymentChannel extends AuditableEntity {
     @Column(length = 255)
     private String description;
 
+    @Column(name = "integration_config", columnDefinition = "TEXT")
+    private String integrationConfig;
+
     @PrePersist
     void assignId() {
         if (id == null) {
@@ -52,4 +55,6 @@ public class TenantPaymentChannel extends AuditableEntity {
     public void setActive(boolean active) { this.active = active; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getIntegrationConfig() { return integrationConfig; }
+    public void setIntegrationConfig(String integrationConfig) { this.integrationConfig = integrationConfig; }
 }

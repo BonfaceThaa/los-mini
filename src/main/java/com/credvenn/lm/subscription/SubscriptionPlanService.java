@@ -40,6 +40,8 @@ public class SubscriptionPlanService {
         plan.setApprovedApplicationThreshold(request.approvedApplicationThreshold());
         plan.setMonthlyFee(request.monthlyFee());
         plan.setInterestSharePercentage(request.interestSharePercentage());
+        plan.setKycSuccessCost(request.kycSuccessCost());
+        plan.setStatementSuccessCost(request.statementSuccessCost());
         plan.setCurrency(request.currency().trim().toUpperCase());
         plan.setActive(true);
         plan.setCreatedBy(actor);
@@ -60,6 +62,8 @@ public class SubscriptionPlanService {
         plan.setApprovedApplicationThreshold(request.approvedApplicationThreshold());
         plan.setMonthlyFee(request.monthlyFee());
         plan.setInterestSharePercentage(request.interestSharePercentage());
+        plan.setKycSuccessCost(request.kycSuccessCost());
+        plan.setStatementSuccessCost(request.statementSuccessCost());
         plan.setCurrency(request.currency().trim().toUpperCase());
         plan.setActive(request.active());
         plan.setUpdatedBy(actor);
@@ -94,6 +98,8 @@ public class SubscriptionPlanService {
                 plan.getApprovedApplicationThreshold(),
                 plan.getMonthlyFee(),
                 plan.getInterestSharePercentage(),
+                plan.getKycSuccessCost(),
+                plan.getStatementSuccessCost(),
                 plan.getCurrency(),
                 plan.isActive(),
                 plan.getCreatedBy(),

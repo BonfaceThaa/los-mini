@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,6 +38,18 @@ public class PaymentController {
             @PathVariable String tenantId,
             @Valid @RequestBody PaymentDtos.CreateTenantPaymentChannelRequest request) {
         return ResponseEntity.ok(channelService.create(tenantId, request));
+    }
+
+    @PatchMapping("/api/v1/internal/tenants/{tenantId}/payment-channels/mpesa/{channelId}")
+    @SecurityRequirement(name = "bearerAuth")
+    @PreAuthorize("hasAuthority('TENANT_MANAGE_ALL')")
+    @Tag(name = "Payments")
+    @Operation(summary = "Update tenant Mpesa channel credentials or active status")
+    public ResponseEntity<PaymentDtos.TenantPaymentChannelResponse> updateChannel(
+            @PathVariable String tenantId,
+            @PathVariable String channelId,
+            @Valid @RequestBody PaymentDtos.UpdateTenantPaymentChannelRequest request) {
+        return ResponseEntity.ok(channelService.update(tenantId, channelId, request));
     }
 
     @GetMapping("/api/v1/internal/tenants/{tenantId}/payment-channels")
@@ -86,5 +99,14 @@ public class PaymentController {
                 request.BillRefNumber(),
                 request.TransAmount());
         return ResponseEntity.ok(mpesaPaymentService.acceptDarajaCallback(request));
+    }
+
+    @PostMapping("/api/v1/public/tenants/{tenantId}/payments/mpesa/stk/callback")
+    @Tag(name = "Payments")
+    @Operation(summary = "Receive tenant-specific Daraja STK callback")
+    public ResponseEntity<PaymentDtos.DarajaCallbackAcknowledgement> stkCallback(
+            @PathVariable String tenantId,
+            @Valid @RequestBody PaymentDtos.DarajaStkCallbackRequest request) {
+        return ResponseEntity.ok(mpesaPaymentService.acceptStkCallback(tenantId, request));
     }
 }

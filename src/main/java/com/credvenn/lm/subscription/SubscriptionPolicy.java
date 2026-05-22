@@ -15,7 +15,9 @@ public class SubscriptionPolicy {
                 request.monthlyApplicationLimit(),
                 request.approvedApplicationThreshold(),
                 request.monthlyFee(),
-                request.interestSharePercentage());
+                request.interestSharePercentage(),
+                request.kycSuccessCost(),
+                request.statementSuccessCost());
     }
 
     public void validatePlan(SubscriptionDtos.UpdateSubscriptionPlanRequest request) {
@@ -25,7 +27,9 @@ public class SubscriptionPolicy {
                 request.monthlyApplicationLimit(),
                 request.approvedApplicationThreshold(),
                 request.monthlyFee(),
-                request.interestSharePercentage());
+                request.interestSharePercentage(),
+                request.kycSuccessCost(),
+                request.statementSuccessCost());
     }
 
     public void validateBillingPeriod(Instant currentPeriodStart, Instant currentPeriodEnd) {
@@ -40,7 +44,9 @@ public class SubscriptionPolicy {
             Integer monthlyApplicationLimit,
             Integer approvedApplicationThreshold,
             BigDecimal monthlyFee,
-            BigDecimal interestSharePercentage) {
+            BigDecimal interestSharePercentage,
+            BigDecimal kycSuccessCost,
+            BigDecimal statementSuccessCost) {
         if (maxUsers == null || maxUsers < 0
                 || maxBranches == null || maxBranches < 0
                 || monthlyApplicationLimit == null || monthlyApplicationLimit < 0
@@ -52,6 +58,10 @@ public class SubscriptionPolicy {
         }
         if (interestSharePercentage == null || interestSharePercentage.signum() < 0) {
             throw new BadRequestException("Interest share percentage must be zero or greater");
+        }
+        if (kycSuccessCost == null || kycSuccessCost.signum() < 0
+                || statementSuccessCost == null || statementSuccessCost.signum() < 0) {
+            throw new BadRequestException("Usage charge amounts must be zero or greater");
         }
     }
 }

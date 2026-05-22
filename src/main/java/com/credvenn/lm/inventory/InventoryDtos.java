@@ -48,6 +48,9 @@ public final class InventoryDtos {
             String id,
             String applicationId,
             String deviceId,
+            String deviceName,
+            String imei1,
+            String imei2,
             String assignedBy,
             Instant assignedAt) {
     }

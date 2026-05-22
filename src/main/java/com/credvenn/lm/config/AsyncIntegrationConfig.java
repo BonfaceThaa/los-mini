@@ -3,9 +3,13 @@ package com.credvenn.lm.config;
 import com.credvenn.lm.document.DocumentStorageProperties;
 import com.credvenn.lm.fineract.FineractProperties;
 import com.credvenn.lm.kyc.KycProviderProperties;
+import com.credvenn.lm.security.AppCorsProperties;
+import com.credvenn.lm.security.AppEncryptionProperties;
 import com.credvenn.lm.security.AppSecurityProperties;
 import com.credvenn.lm.security.BootstrapSuperAdminProperties;
 import com.credvenn.lm.statementinbox.InboundStatementProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.credvenn.lm.statement.CladfyProperties;
 import com.credvenn.lm.statement.StatementProviderProperties;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -15,25 +19,43 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.client.RestClient;
 
 @Configuration
 @EnableAsync
+@EnableScheduling
 @EnableConfigurationProperties({
         AppSecurityProperties.class,
+        AppEncryptionProperties.class,
+        AppCorsProperties.class,
         BootstrapSuperAdminProperties.class,
         DocumentStorageProperties.class,
         KycProviderProperties.class,
         StatementProviderProperties.class,
+        CladfyProperties.class,
         FineractProperties.class,
         InboundStatementProperties.class
 })
 public class AsyncIntegrationConfig {
 
     @Bean
+    @Qualifier("fineractRestClient")
     RestClient fineractRestClient(RestClient.Builder builder, FineractProperties properties) {
         return builder.baseUrl(properties.baseUrl()).build();
+    }
+
+    @Bean
+    @Qualifier("cladfyRestClient")
+    RestClient cladfyRestClient(RestClient.Builder builder, CladfyProperties properties) {
+        return builder.baseUrl(properties.baseUrl()).build();
+    }
+
+    @Bean
+    ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 
     @Bean

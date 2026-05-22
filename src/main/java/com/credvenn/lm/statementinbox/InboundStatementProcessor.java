@@ -7,7 +7,6 @@ import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.document.DocumentService;
 import java.io.InputStream;
-import com.credvenn.lm.statement.StatementAnalysisService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -36,7 +35,6 @@ public class InboundStatementProcessor {
     private final InboundStatementFilenameParser filenameParser;
     private final LoanRequestApplicationRepository applicationRepository;
     private final DocumentService documentService;
-    private final StatementAnalysisService statementAnalysisService;
     private final InboundStatementStorageService inboundStatementStorageService;
 
     public InboundStatementProcessor(
@@ -45,14 +43,12 @@ public class InboundStatementProcessor {
             InboundStatementFilenameParser filenameParser,
             LoanRequestApplicationRepository applicationRepository,
             DocumentService documentService,
-            StatementAnalysisService statementAnalysisService,
             InboundStatementStorageService inboundStatementStorageService) {
         this.receiptRepository = receiptRepository;
         this.inboxRepository = inboxRepository;
         this.filenameParser = filenameParser;
         this.applicationRepository = applicationRepository;
         this.documentService = documentService;
-        this.statementAnalysisService = statementAnalysisService;
         this.inboundStatementStorageService = inboundStatementStorageService;
     }
 
@@ -80,8 +76,6 @@ public class InboundStatementProcessor {
                             inbox.getTenantId(),
                             MATCHABLE_STATUSES,
                             Instant.now().minus(1, ChronoUnit.HOURS));
-                            System.out.println("candidates ...");
-                            System.out.println(candidates);
             List<LoanRequestApplication> matches = candidates.stream()
                     .filter(application -> phoneMatches(phoneToken, application.getPhoneNumber()))
                     .toList();
@@ -159,9 +153,10 @@ public class InboundStatementProcessor {
                     receipt.setBackgroundError(null);
                     receipt.setMatchStatus(status);
                     receipt.setProcessedAt(Instant.now());
-                    log.info("Inbound statement matched applicationId={} and documentId={} - triggering statement analysis",
-                            application.getId(), document.id());
-                    statementAnalysisService.run(application.getTenantId(), application.getId(), document.id(), actor);
+                    log.info(
+                            "Inbound statement matched applicationId={} and documentId={} - statement analysis will trigger after commit",
+                            application.getId(),
+                            document.id());
                 }
             } catch (Exception ex) {
                 throw new IllegalStateException("Failed to attach inbound statement to application", ex);

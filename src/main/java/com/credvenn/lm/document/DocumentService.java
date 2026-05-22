@@ -3,11 +3,13 @@ package com.credvenn.lm.document;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.common.exception.NotFoundException;
+import com.credvenn.lm.statement.StatementDocumentUploadedEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,14 +23,17 @@ public class DocumentService {
     private final ApplicationDocumentRepository documentRepository;
     private final DocumentStorageService documentStorageService;
     private final LoanRequestApplicationRepository applicationRepository;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public DocumentService(
             ApplicationDocumentRepository documentRepository,
             DocumentStorageService documentStorageService,
-            LoanRequestApplicationRepository applicationRepository) {
+            LoanRequestApplicationRepository applicationRepository,
+            ApplicationEventPublisher applicationEventPublisher) {
         this.documentRepository = documentRepository;
         this.documentStorageService = documentStorageService;
         this.applicationRepository = applicationRepository;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
     @Transactional
@@ -183,6 +188,12 @@ public class DocumentService {
                 document.getContentType(),
                 document.getFileSize(),
                 document.getRelativePath());
+        applicationEventPublisher.publishEvent(new StatementDocumentUploadedEvent(
+                tenantId,
+                applicationId,
+                document.getId(),
+                documentType,
+                actor));
         return toResponse(document);
     }
 }

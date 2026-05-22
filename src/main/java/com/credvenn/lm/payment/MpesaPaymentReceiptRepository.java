@@ -11,5 +11,7 @@ public interface MpesaPaymentReceiptRepository extends JpaRepository<MpesaPaymen
 
     Optional<MpesaPaymentReceipt> findByMpesaReceiptNumber(String mpesaReceiptNumber);
 
+    Optional<MpesaPaymentReceipt> findByMatchedApplicationIdAndMpesaReceiptNumber(String matchedApplicationId, String mpesaReceiptNumber);
+
     List<MpesaPaymentReceipt> findAllByProcessingStatusInOrderByCreatedAtDesc(Collection<MpesaPaymentProcessingStatus> statuses);
 }

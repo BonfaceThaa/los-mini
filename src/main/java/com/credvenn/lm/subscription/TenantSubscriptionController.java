@@ -1,5 +1,6 @@
 package com.credvenn.lm.subscription;
 
+import com.credvenn.lm.security.CurrentActorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,12 +27,18 @@ public class TenantSubscriptionController {
 
     private final TenantSubscriptionService tenantSubscriptionService;
     private final SubscriptionUsageService subscriptionUsageService;
+    private final SubscriptionBillingService subscriptionBillingService;
+    private final CurrentActorService currentActorService;
 
     public TenantSubscriptionController(
             TenantSubscriptionService tenantSubscriptionService,
-            SubscriptionUsageService subscriptionUsageService) {
+            SubscriptionUsageService subscriptionUsageService,
+            SubscriptionBillingService subscriptionBillingService,
+            CurrentActorService currentActorService) {
         this.tenantSubscriptionService = tenantSubscriptionService;
         this.subscriptionUsageService = subscriptionUsageService;
+        this.subscriptionBillingService = subscriptionBillingService;
+        this.currentActorService = currentActorService;
     }
 
     @PostMapping
@@ -84,5 +91,29 @@ public class TenantSubscriptionController {
     @Operation(summary = "Get current subscription usage for a tenant")
     public ResponseEntity<SubscriptionDtos.SubscriptionUsageResponse> getCurrentUsage(@PathVariable String tenantId) {
         return ResponseEntity.ok(subscriptionUsageService.getCurrentUsage(tenantId));
+    }
+
+    @GetMapping("/current/ledger")
+    @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_VIEW') or hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
+    @Operation(summary = "Get current subscription ledger entries for a tenant")
+    public ResponseEntity<List<SubscriptionDtos.TenantSubscriptionLedgerResponse>> getCurrentLedger(@PathVariable String tenantId) {
+        return ResponseEntity.ok(subscriptionBillingService.listCurrentLedger(tenantId));
+    }
+
+    @PostMapping("/{subscriptionId}/top-ups")
+    @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
+    @Operation(summary = "Credit prepaid balance for a tenant subscription")
+    public ResponseEntity<SubscriptionDtos.TenantSubscriptionLedgerResponse> topUp(
+            @PathVariable String tenantId,
+            @PathVariable String subscriptionId,
+            @Valid @RequestBody SubscriptionDtos.CreateSubscriptionTopUpRequest request) {
+        String actor = currentActorService.requireCurrentUser().username();
+        SubscriptionDtos.TenantSubscriptionLedgerResponse response = subscriptionBillingService.topUpPrepaid(
+                tenantId,
+                subscriptionId,
+                request.amount(),
+                request.notes(),
+                actor);
+        return ResponseEntity.ok(response);
     }
 }
