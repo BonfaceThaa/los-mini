@@ -1,5 +1,7 @@
 package com.credvenn.lm.devicecontrol;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +29,12 @@ public interface DeviceControlGateway {
             String channelCode,
             String link,
             Map<String, String> templateFields) {
+    }
+
+    record AutoLockItem(
+            String imei,
+            LocalDate dueDate,
+            LocalTime dueTimeUtc) {
     }
 
     record BulkActionResult(
@@ -57,6 +65,10 @@ public interface DeviceControlGateway {
     BulkActionResult sendNotification(RuntimeConfig config, String transactionId, String notificationCode, List<BulkActionItem> items);
 
     BulkActionResult sendNudge(RuntimeConfig config, String transactionId, List<BulkActionItem> items);
+
+    BulkActionResult bulkUnlock(RuntimeConfig config, String transactionId, List<BulkActionItem> items);
+
+    BulkActionResult activateAutoLock(RuntimeConfig config, String transactionId, List<AutoLockItem> items);
 
     ActionResult unlock(RuntimeConfig config, String imei1, String triggerId);
 

@@ -19,8 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class MpesaPaymentPageService {
 
     private static final Logger log = LoggerFactory.getLogger(MpesaPaymentPageService.class);
-    private static final PaymentDtos.PaymentPageAcknowledgementResponse STK_ACK =
-            new PaymentDtos.PaymentPageAcknowledgementResponse("STK push request received.");
     private static final ApplicationStatus ELIGIBLE_STK_STATUS = ApplicationStatus.FINERACT_LOAN_ACTIVATED;
 
     private final TenantBrandingService tenantBrandingService;
@@ -46,26 +44,21 @@ public class MpesaPaymentPageService {
     }
 
     @Transactional(readOnly = true)
-    public PaymentDtos.PaymentPageBrandingResponse getBranding(AuthenticatedService actor) {
+    public TenantBrandingDtos.TenantBrandingResponse getBranding(AuthenticatedService actor) {
         String tenantId = requireTenantId(actor);
-        TenantBrandingDtos.TenantBrandingResponse branding = tenantBrandingService.getBranding(tenantId);
-        return new PaymentDtos.PaymentPageBrandingResponse(
-                branding.displayName(),
-                branding.logoUrl(),
-                branding.supportPhone(),
-                branding.paymentInstructions());
+        return tenantBrandingService.getBranding(tenantId);
     }
 
     @Transactional
-    public PaymentDtos.PaymentPageAcknowledgementResponse initiateStkPush(
+    public void initiateStkPush(
             AuthenticatedService actor,
-            PaymentDtos.InitiatePaymentPageStkPushRequest request) {
+            String phoneNumber) {
         String tenantId = requireTenantId(actor);
-        String normalizedPhoneNumber = normalizePhoneNumber(request.phoneNumber());
+        String normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
 
         MpesaStkPushRequest stkRequest = new MpesaStkPushRequest();
         stkRequest.setTenantId(tenantId);
-        stkRequest.setRequestedPhoneNumber(request.phoneNumber().trim());
+        stkRequest.setRequestedPhoneNumber(phoneNumber.trim());
         stkRequest.setNormalizedPhoneNumber(normalizedPhoneNumber);
         stkRequest.setServiceName(actor.serviceName());
         stkRequest.setStatus(MpesaStkPushRequestStatus.RECEIVED);
@@ -120,7 +113,6 @@ public class MpesaPaymentPageService {
         }
 
         stkPushRequestRepository.save(stkRequest);
-        return STK_ACK;
     }
 
     private LoanRequestApplication resolveOldestLoan(String tenantId, String normalizedPhoneNumber) {

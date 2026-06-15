@@ -137,7 +137,7 @@ public class InboundStatementProcessor {
                     var document = documentService.createFromInputStream(
                             application.getTenantId(),
                             application.getId(),
-                            "mpesa-statement",
+                            "MPESA_STATEMENT",
                             actor,
                             receipt.getOriginalFilename(),
                             receipt.getContentType(),

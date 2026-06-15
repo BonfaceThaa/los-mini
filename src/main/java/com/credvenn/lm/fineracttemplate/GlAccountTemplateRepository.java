@@ -2,15 +2,19 @@ package com.credvenn.lm.fineracttemplate;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface GlAccountTemplateRepository extends JpaRepository<GlAccountTemplate, String> {
 
-    Optional<GlAccountTemplate> findByTemplateCodeIgnoreCase(String templateCode);
+    Optional<GlAccountTemplate> findByTemplateCodeIgnoreCaseAndTenantId(String templateCode, String tenantId);
 
-    Optional<GlAccountTemplate> findByFineractGlAccountId(Long fineractGlAccountId);
+    Optional<GlAccountTemplate> findByFineractGlAccountIdAndTenantId(Long fineractGlAccountId, String tenantId);
 
-    boolean existsByTemplateCodeIgnoreCase(String templateCode);
+    boolean existsByTemplateCodeIgnoreCaseAndTenantId(String templateCode, String tenantId);
 
-    List<GlAccountTemplate> findAllByOrderByTemplateCodeAsc();
+    List<GlAccountTemplate> findAllByTenantIdOrderByTemplateCodeAsc(String tenantId);
+
+    Page<GlAccountTemplate> findAllByTenantId(String tenantId, Pageable pageable);
 }

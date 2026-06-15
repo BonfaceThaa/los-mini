@@ -10,6 +10,9 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -112,6 +115,34 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCNOTIF_%s_REQ.csv".formatted(timestamp()));
         Object response = client(config).put()
                 .uri("/v3/lifecycle/dem_{client}/bulkapplynudge/", config.clientCode())
+                .headers(headers -> headers.setBearerAuth(accessToken(config)))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(form)
+                .retrieve()
+                .body(Object.class);
+        return new BulkActionResult(transactionId, csv, stringify(response));
+    }
+
+    @Override
+    public BulkActionResult bulkUnlock(RuntimeConfig config, String transactionId, List<BulkActionItem> items) {
+        String csv = buildBulkUnlockCsv(items);
+        MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCUNLOCK_%s_REQ.csv".formatted(timestamp()));
+        Object response = client(config).put()
+                .uri("/v3/lifecycle/dem_{client}/bulkapplyunlock/", config.clientCode())
+                .headers(headers -> headers.setBearerAuth(accessToken(config)))
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(form)
+                .retrieve()
+                .body(Object.class);
+        return new BulkActionResult(transactionId, csv, stringify(response));
+    }
+
+    @Override
+    public BulkActionResult activateAutoLock(RuntimeConfig config, String transactionId, List<AutoLockItem> items) {
+        String csv = buildAutoLockCsv(items);
+        MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCAUTOLOCK_%s_REQ.csv".formatted(timestamp()));
+        Object response = client(config).put()
+                .uri("/v3/dem_{client}/auto_lock_activate/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(form)
@@ -239,6 +270,34 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         return builder.toString();
     }
 
+    private String buildBulkUnlockCsv(List<BulkActionItem> items) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("IMEI,TriggerID,Channel_Code\n");
+        for (BulkActionItem item : items) {
+            builder.append(csv(item.imei()))
+                    .append(',')
+                    .append(csv(item.triggerId()))
+                    .append(',')
+                    .append(csv(item.channelCode()))
+                    .append('\n');
+        }
+        return builder.toString();
+    }
+
+    private String buildAutoLockCsv(List<AutoLockItem> items) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("IMEI,DueDate,Time\n");
+        for (AutoLockItem item : items) {
+            builder.append(csv(item.imei()))
+                    .append(',')
+                    .append(csv(formatDueDate(item.dueDate())))
+                    .append(',')
+                    .append(csv(formatUtcTime(item.dueTimeUtc())))
+                    .append('\n');
+        }
+        return builder.toString();
+    }
+
     private String buildNotificationCsv(List<BulkActionItem> items) {
         if (items.isEmpty() || items.get(0).templateFields() == null || items.get(0).templateFields().isEmpty()) {
             return buildBulkCsv(items, false);
@@ -290,6 +349,14 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         return DateTimeFormats.BASIC_TIMESTAMP.format(Instant.now());
     }
 
+    private String formatDueDate(LocalDate dueDate) {
+        return dueDate == null ? null : DateTimeFormats.DATACULTR_DUE_DATE.format(dueDate);
+    }
+
+    private String formatUtcTime(LocalTime dueTimeUtc) {
+        return dueTimeUtc == null ? null : DateTimeFormats.UTC_TIME.format(dueTimeUtc);
+    }
+
     private String trimTrailingSlash(String value) {
         if (value == null || value.isBlank()) {
             return value;
@@ -304,6 +371,10 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         private static final java.time.format.DateTimeFormatter BASIC_TIMESTAMP =
                 java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
                         .withZone(java.time.ZoneId.of("Africa/Nairobi"));
+        private static final DateTimeFormatter DATACULTR_DUE_DATE =
+                DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        private static final DateTimeFormatter UTC_TIME =
+                DateTimeFormatter.ofPattern("HH:mm");
 
         private DateTimeFormats() {
         }

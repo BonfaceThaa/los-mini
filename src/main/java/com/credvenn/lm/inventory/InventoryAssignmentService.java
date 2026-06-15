@@ -50,6 +50,7 @@ public class InventoryAssignmentService {
             } else if (!assignment.getDeviceId().equals(requestedDevice.getId())) {
                 InventoryDevice existingDevice = inventoryService.getRequiredDevice(tenantId, assignment.getDeviceId());
                 existingDevice.setStatus(InventoryDeviceStatus.AVAILABLE);
+                existingDevice.setLockStatus(InventoryDeviceLockStatus.CLEAR);
                 if (requestedDevice.getStatus() != InventoryDeviceStatus.AVAILABLE) {
                     throw new BadRequestException("Inventory device is not available");
                 }
@@ -59,6 +60,7 @@ public class InventoryAssignmentService {
             assignment.setAssignedBy(actor);
             assignment.setAssignedAt(Instant.now());
             requestedDevice.setStatus(InventoryDeviceStatus.ASSIGNED);
+            requestedDevice.setLockStatus(InventoryDeviceLockStatus.CLEAR);
             log.info("Assigning inventory device deviceId={} to application", requestedDevice.getId());
             applicationService.handleDeviceAssigned(tenantId, applicationId, actor, requestedDevice);
             return toResponse(assignmentRepository.save(assignment), requestedDevice);

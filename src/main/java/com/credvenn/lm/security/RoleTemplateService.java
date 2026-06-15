@@ -40,6 +40,9 @@ public class RoleTemplateService {
                         PermissionCatalog.LOAN_VIEW.code(),
                         PermissionCatalog.LOAN_CREATE.code(),
                         PermissionCatalog.GL_ACCOUNT_VIEW.code(),
+                        PermissionCatalog.GL_ACCOUNT_CREATE.code(),
+                        PermissionCatalog.ACCOUNTING_RULE_VIEW.code(),
+                        PermissionCatalog.ACCOUNTING_RULE_CREATE.code(),
                         PermissionCatalog.KYC_VIEW.code(),
                         PermissionCatalog.KYC_RUN.code(),
                         PermissionCatalog.KYC_MANUAL_REVIEW.code(),
@@ -114,7 +117,8 @@ public class RoleTemplateService {
                         PermissionCatalog.CREDIT_CHECK_VIEW.code(),
                         PermissionCatalog.INVENTORY_VIEW.code(),
                         PermissionCatalog.DEVICE_CONTROL_CONFIG_VIEW.code(),
-                        PermissionCatalog.DEVICE_CONTROL_ACTION_VIEW.code()));
+                        PermissionCatalog.DEVICE_CONTROL_ACTION_VIEW.code(),
+                        PermissionCatalog.ACCOUNTING_RULE_VIEW.code()));
     }
 
     public Role getRequiredTenantRole(String tenantId, String code) {

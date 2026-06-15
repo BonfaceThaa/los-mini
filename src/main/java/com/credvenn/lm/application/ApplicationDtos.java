@@ -22,7 +22,7 @@ public final class ApplicationDtos {
             @NotBlank @Size(max = 50) String phoneNumber,
             @NotBlank @Size(max = 100) String nationalId,
             @NotNull @Positive BigDecimal requestedAmount,
-            @NotNull @Positive Integer requestedTermMonths) {
+            @Positive Integer requestedTermMonths) {
     }
 
     @Schema(name = "CaptureConsentRequest")
@@ -56,7 +56,7 @@ public final class ApplicationDtos {
             String phoneNumber,
             String nationalId,
             BigDecimal requestedAmount,
-            int requestedTermMonths,
+            Integer requestedTermMonths,
             ApplicationStatus status,
             String fineractClientId,
             String fineractLoanId,

@@ -8,6 +8,8 @@ public interface TenantPaymentChannelRepository extends JpaRepository<TenantPaym
 
     Optional<TenantPaymentChannel> findByShortCodeAndActiveTrue(String shortCode);
 
+    Optional<TenantPaymentChannel> findByTenantIdAndShortCodeAndActiveTrue(String tenantId, String shortCode);
+
     List<TenantPaymentChannel> findAllByTenantIdOrderByShortCodeAsc(String tenantId);
 
     Optional<TenantPaymentChannel> findFirstByTenantIdAndChannelTypeAndActiveTrueOrderByCreatedAtAsc(

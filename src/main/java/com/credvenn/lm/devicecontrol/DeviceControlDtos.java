@@ -192,4 +192,44 @@ public final class DeviceControlDtos {
     @Schema(name = "OfflinePinResponse")
     public record OfflinePinResponse(String message, String passcode) {
     }
+
+    @Schema(name = "DirectUnlockRequest")
+    public record DirectUnlockRequest(@NotBlank String imei1) {
+    }
+
+    @Schema(name = "DirectUnlockResponse")
+    public record DirectUnlockResponse(
+            String message,
+            String imei1,
+            String applicationId,
+            String fineractLoanId,
+            String providerReference,
+            Instant ranAt) {
+    }
+
+    @Schema(name = "OverdueLockSweepResponse")
+    public record OverdueLockSweepResponse(
+            String message,
+            String tenantId,
+            int evaluatedLoans,
+            int overdueLoans,
+            int queuedLocks,
+            int succeededLocks,
+            int failedLocks,
+            String providerTransactionId,
+            Instant ranAt) {
+    }
+
+    @Schema(name = "UnlockSweepResponse")
+    public record UnlockSweepResponse(
+            String message,
+            String tenantId,
+            int evaluatedLoans,
+            int eligibleUnlocks,
+            int queuedUnlocks,
+            int succeededUnlocks,
+            int failedUnlocks,
+            String providerTransactionId,
+            Instant ranAt) {
+    }
 }

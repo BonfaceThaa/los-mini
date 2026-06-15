@@ -48,6 +48,10 @@ public class InventoryDevice extends AuditableEntity {
     @Column(nullable = false, length = 50)
     private InventoryDeviceStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lock_status", nullable = false, length = 50)
+    private InventoryDeviceLockStatus lockStatus = InventoryDeviceLockStatus.CLEAR;
+
     @PrePersist
     void assignId() {
         if (id == null) {
@@ -74,4 +78,6 @@ public class InventoryDevice extends AuditableEntity {
     public void setDepositValue(BigDecimal depositValue) { this.depositValue = depositValue; }
     public InventoryDeviceStatus getStatus() { return status; }
     public void setStatus(InventoryDeviceStatus status) { this.status = status; }
+    public InventoryDeviceLockStatus getLockStatus() { return lockStatus; }
+    public void setLockStatus(InventoryDeviceLockStatus lockStatus) { this.lockStatus = lockStatus; }
 }

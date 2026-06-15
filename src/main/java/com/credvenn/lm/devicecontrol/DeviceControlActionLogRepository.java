@@ -7,6 +7,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface DeviceControlActionLogRepository extends JpaRepository<DeviceControlActionLog, String> {
     List<DeviceControlActionLog> findAllByTenantIdOrderByCreatedAtDesc(String tenantId);
+    boolean existsByApplicationIdAndDueDateAndActionTypeAndStatusIn(
+            String applicationId,
+            LocalDate dueDate,
+            DeviceControlActionType actionType,
+            Collection<DeviceControlActionStatus> statuses);
     boolean existsByRuleIdAndApplicationIdAndDueDateAndActionTypeAndStatusIn(
             String ruleId,
             String applicationId,

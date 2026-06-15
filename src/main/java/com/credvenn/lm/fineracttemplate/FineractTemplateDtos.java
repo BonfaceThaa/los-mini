@@ -19,6 +19,27 @@ public final class FineractTemplateDtos {
             @NotEmpty List<@Valid RegisterExistingGlAccountTemplateItem> templates) {
     }
 
+    @Schema(name = "CreateGlAccountTemplateRequest")
+    public record CreateGlAccountTemplateRequest(
+            @NotBlank String templateCode,
+            @NotBlank String displayName,
+            @NotBlank String businessPurpose,
+            @NotBlank String managementMode,
+            @NotNull @Valid CreateFineractGlAccount fineractAccount,
+            String description) {
+    }
+
+    @Schema(name = "CreateFineractGlAccount")
+    public record CreateFineractGlAccount(
+            @NotBlank String name,
+            @NotBlank String glCode,
+            @NotNull Boolean manualEntriesAllowed,
+            @NotNull Integer type,
+            @NotNull Integer usage,
+            Long parentId,
+            Long tagId) {
+    }
+
     @Schema(name = "RegisterExistingGlAccountTemplateItem")
     public record RegisterExistingGlAccountTemplateItem(
             @NotBlank String templateCode,
@@ -89,6 +110,16 @@ public final class FineractTemplateDtos {
     public record RegisterExistingAccountingRuleTemplatesRequest(
             @NotBlank String source,
             @NotEmpty List<@Valid RegisterExistingAccountingRuleTemplateItem> templates) {
+    }
+
+    @Schema(name = "CreateAccountingRuleTemplateRequest")
+    public record CreateAccountingRuleTemplateRequest(
+            @NotBlank String templateCode,
+            @NotBlank String displayName,
+            @NotBlank String businessEvent,
+            @NotBlank String managementMode,
+            @NotNull @Valid AccountingRulePosting posting,
+            String description) {
     }
 
     @Schema(name = "RegisterExistingAccountingRuleTemplateItem")

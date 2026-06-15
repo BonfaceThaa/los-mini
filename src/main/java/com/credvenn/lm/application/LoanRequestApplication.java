@@ -39,8 +39,8 @@ public class LoanRequestApplication extends AuditableEntity {
     @Column(name = "requested_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal requestedAmount;
 
-    @Column(name = "requested_term_months", nullable = false)
-    private int requestedTermMonths;
+    @Column(name = "requested_term_months")
+    private Integer requestedTermMonths;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
@@ -154,8 +154,8 @@ public class LoanRequestApplication extends AuditableEntity {
     public void setNationalId(String nationalId) { this.nationalId = nationalId; }
     public BigDecimal getRequestedAmount() { return requestedAmount; }
     public void setRequestedAmount(BigDecimal requestedAmount) { this.requestedAmount = requestedAmount; }
-    public int getRequestedTermMonths() { return requestedTermMonths; }
-    public void setRequestedTermMonths(int requestedTermMonths) { this.requestedTermMonths = requestedTermMonths; }
+    public Integer getRequestedTermMonths() { return requestedTermMonths; }
+    public void setRequestedTermMonths(Integer requestedTermMonths) { this.requestedTermMonths = requestedTermMonths; }
     public ApplicationStatus getStatus() { return status; }
     public void setStatus(ApplicationStatus status) { this.status = status; }
     public String getFineractClientId() { return fineractClientId; }

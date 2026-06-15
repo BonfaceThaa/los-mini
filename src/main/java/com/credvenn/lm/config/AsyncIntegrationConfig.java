@@ -1,6 +1,7 @@
 package com.credvenn.lm.config;
 
 import com.credvenn.lm.document.DocumentStorageProperties;
+import com.credvenn.lm.devicecontrol.DeviceControlSchedulingProperties;
 import com.credvenn.lm.fineract.FineractProperties;
 import com.credvenn.lm.kyc.KycProviderProperties;
 import com.credvenn.lm.security.AppCorsProperties;
@@ -37,7 +38,8 @@ import org.springframework.web.client.RestClient;
         StatementProviderProperties.class,
         CladfyProperties.class,
         FineractProperties.class,
-        InboundStatementProperties.class
+        InboundStatementProperties.class,
+        DeviceControlSchedulingProperties.class
 })
 public class AsyncIntegrationConfig {
 

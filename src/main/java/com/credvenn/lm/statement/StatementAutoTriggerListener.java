@@ -26,7 +26,14 @@ public class StatementAutoTriggerListener {
         Set<String> autoTypes = properties.autoTriggerDocumentTypes().stream()
                 .map(value -> value.toUpperCase(Locale.ROOT))
                 .collect(java.util.stream.Collectors.toSet());
-        if (!autoTypes.contains(event.documentType().toUpperCase(Locale.ROOT))) {
+        String normalizedDocumentType = event.documentType() == null ? "" : event.documentType().toUpperCase(Locale.ROOT);
+        if (!autoTypes.contains(normalizedDocumentType)) {
+            log.info(
+                    "Skipping auto-trigger for applicationId={} documentId={} documentType={} because it is not in autoTriggerDocumentTypes={}",
+                    event.applicationId(),
+                    event.documentId(),
+                    event.documentType(),
+                    autoTypes);
             return;
         }
         log.info(

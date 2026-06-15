@@ -203,6 +203,31 @@ public class DeviceControlController {
         return ResponseEntity.accepted().build();
     }
 
+    @PostMapping("/actions/run-daily-overdue-locks")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_ACTION_MANAGE')")
+    @Operation(summary = "Run the daily overdue-loan lock sweep for the current tenant")
+    public ResponseEntity<DeviceControlDtos.OverdueLockSweepResponse> runDailyOverdueLocks() {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.accepted().body(collectionsService.runDailyOverdueLockSweep(actor.tenantId(), actor.username()));
+    }
+
+    @PostMapping("/actions/run-daily-unlocks")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_ACTION_MANAGE')")
+    @Operation(summary = "Run the daily cleared-loan unlock sweep for the current tenant")
+    public ResponseEntity<DeviceControlDtos.UnlockSweepResponse> runDailyUnlocks() {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.accepted().body(collectionsService.runDailyUnlockSweep(actor.tenantId(), actor.username()));
+    }
+
+    @PostMapping("/actions/unlock")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_ACTION_MANAGE')")
+    @Operation(summary = "Unlock a single tenant device by IMEI 1")
+    public ResponseEntity<DeviceControlDtos.DirectUnlockResponse> unlockByImei(
+            @Valid @RequestBody DeviceControlDtos.DirectUnlockRequest request) {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.accepted().body(collectionsService.unlockByImei(actor.tenantId(), request, actor.username()));
+    }
+
     @PostMapping("/applications/{applicationId}/offline-pin")
     @PreAuthorize("hasAuthority('DEVICE_OFFLINE_PIN_VIEW')")
     @Operation(summary = "Get an offline unlock PIN for a locked device")

@@ -2,6 +2,8 @@ package com.credvenn.lm.user;
 
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -35,6 +37,9 @@ public interface AppUserRepository extends JpaRepository<AppUser, String> {
 
     @EntityGraph(attributePaths = {"roles", "roles.permissions"})
     List<AppUser> findAllByTenantIdOrderByUsernameAsc(String tenantId);
+
+    @EntityGraph(attributePaths = {"roles", "roles.permissions"})
+    Page<AppUser> findAllByTenantId(String tenantId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"roles", "roles.permissions"})
     Optional<AppUser> findByIdAndTenantId(String id, String tenantId);

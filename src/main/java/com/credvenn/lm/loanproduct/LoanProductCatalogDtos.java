@@ -27,6 +27,7 @@ public final class LoanProductCatalogDtos {
             @NotBlank String amortizationType,
             String transactionProcessingStrategyCode,
             @NotBlank String accountingTemplateCode,
+            @Valid AccountingAccountsRequest accountingAccounts,
             @NotNull Boolean active) {
     }
 
@@ -49,6 +50,18 @@ public final class LoanProductCatalogDtos {
             @NotBlank String rateFrequency) {
     }
 
+    public record AccountingAccountsRequest(
+            Long loanPortfolioAccountId,
+            Long fundSourceAccountId,
+            Long interestOnLoanAccountId,
+            Long incomeFromFeeAccountId,
+            Long incomeFromPenaltyAccountId,
+            Long incomeFromRecoveryAccountId,
+            Long writeOffAccountId,
+            Long transfersInSuspenseAccountId,
+            Long overpaymentLiabilityAccountId) {
+    }
+
     @Schema(name = "LoanProductCatalogResponse")
     public record LoanProductCatalogResponse(
             String id,
@@ -64,6 +77,7 @@ public final class LoanProductCatalogDtos {
             String amortizationType,
             String transactionProcessingStrategyCode,
             String accountingTemplateCode,
+            AccountingAccountsRequest accountingAccounts,
             String fineractProductId,
             boolean active,
             Instant createdAt,
@@ -94,6 +108,7 @@ public final class LoanProductCatalogDtos {
                     mapping.getAmortizationType(),
                     mapping.getTransactionProcessingStrategyCode(),
                     mapping.getAccountingTemplateCode(),
+                    null,
                     String.valueOf(mapping.getFineractProductId()),
                     mapping.isActive(),
                     mapping.getCreatedAt(),

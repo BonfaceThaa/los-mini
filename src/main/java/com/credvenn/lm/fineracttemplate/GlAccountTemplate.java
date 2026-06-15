@@ -16,7 +16,10 @@ public class GlAccountTemplate extends AuditableEntity {
     @Column(length = 36)
     private String id;
 
-    @Column(name = "template_code", nullable = false, unique = true, length = 100)
+    @Column(name = "tenant_id", length = 36)
+    private String tenantId;
+
+    @Column(name = "template_code", nullable = false, length = 100)
     private String templateCode;
 
     @Column(name = "display_name", nullable = false)
@@ -66,6 +69,8 @@ public class GlAccountTemplate extends AuditableEntity {
     }
 
     public String getId() { return id; }
+    public String getTenantId() { return tenantId; }
+    public void setTenantId(String tenantId) { this.tenantId = tenantId; }
     public String getTemplateCode() { return templateCode; }
     public void setTemplateCode(String templateCode) { this.templateCode = templateCode; }
     public String getDisplayName() { return displayName; }

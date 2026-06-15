@@ -6,10 +6,17 @@ import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.fineract.FineractGateway;
+import com.credvenn.lm.inventory.InventoryDevice;
+import com.credvenn.lm.inventory.InventoryDeviceLockStatus;
+import com.credvenn.lm.inventory.InventoryDeviceRepository;
 import com.credvenn.lm.tenant.Tenant;
 import com.credvenn.lm.tenant.TenantService;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,6 +36,8 @@ public class DeviceControlCollectionsService {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceControlCollectionsService.class);
     private static final int FINERACT_PAGE_SIZE = 200;
+    private static final ZoneId NAIROBI_ZONE = ZoneId.of("Africa/Nairobi");
+    private static final LocalTime AUTO_LOCK_TIME_NAIROBI = LocalTime.of(6, 0);
 
     private final TenantDeviceControlConfigRepository configRepository;
     private final TenantDeviceControlConfigService configService;
@@ -39,6 +48,7 @@ public class DeviceControlCollectionsService {
     private final LoanDeviceControlStateRepository stateRepository;
     private final DeviceControlActionLogRepository actionLogRepository;
     private final LoanRequestApplicationRepository applicationRepository;
+    private final InventoryDeviceRepository inventoryDeviceRepository;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
     private final DeviceControlGateway deviceControlGateway;
@@ -53,6 +63,7 @@ public class DeviceControlCollectionsService {
             LoanDeviceControlStateRepository stateRepository,
             DeviceControlActionLogRepository actionLogRepository,
             LoanRequestApplicationRepository applicationRepository,
+            InventoryDeviceRepository inventoryDeviceRepository,
             TenantService tenantService,
             FineractGateway fineractGateway,
             DeviceControlGateway deviceControlGateway) {
@@ -65,6 +76,7 @@ public class DeviceControlCollectionsService {
         this.stateRepository = stateRepository;
         this.actionLogRepository = actionLogRepository;
         this.applicationRepository = applicationRepository;
+        this.inventoryDeviceRepository = inventoryDeviceRepository;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
         this.deviceControlGateway = deviceControlGateway;
@@ -89,19 +101,212 @@ public class DeviceControlCollectionsService {
         }
     }
 
+    @Transactional
+    public void runDailyOverdueLockSweeps() {
+        for (TenantDeviceControlConfig config : configRepository.findAllByEnabledTrueOrderByTenantIdAsc()) {
+            try {
+                runDailyOverdueLockSweep(config.getTenantId(), "system");
+            } catch (Exception ex) {
+                log.error("Device-control daily overdue lock sweep failed for tenantId={}", config.getTenantId(), ex);
+            }
+        }
+    }
+
+    @Transactional
+    public void runDailyUnlockSweeps() {
+        for (TenantDeviceControlConfig config : configRepository.findAllByEnabledTrueOrderByTenantIdAsc()) {
+            try {
+                runDailyUnlockSweep(config.getTenantId(), "system");
+            } catch (Exception ex) {
+                log.error("Device-control daily unlock sweep failed for tenantId={}", config.getTenantId(), ex);
+            }
+        }
+    }
+
+    @Transactional
+    public DeviceControlDtos.OverdueLockSweepResponse runDailyOverdueLockSweep(String tenantId, String actor) {
+        TenantDeviceControlConfig config = configService.requireConfig(tenantId);
+        if (!config.isEnabled()) {
+            throw new BadRequestException("Device control is not enabled for this tenant");
+        }
+        if (!config.isLockEnabled()) {
+            throw new BadRequestException("Device lock actions are not enabled for this tenant");
+        }
+
+        Tenant tenant = tenantService.getRequiredTenant(tenantId);
+        List<LoanRequestApplication> applications = applicationRepository
+                .findAllByTenantIdAndStatusAndAssignedDeviceIdIsNotNullAndAssignedDeviceImei1IsNotNullAndFineractLoanIdIsNotNullOrderByCreatedAtAsc(
+                        tenantId,
+                        ApplicationStatus.FINERACT_LOAN_ACTIVATED);
+        if (applications.isEmpty()) {
+            config.setLastOverdueLockRunAt(Instant.now());
+            return new DeviceControlDtos.OverdueLockSweepResponse(
+                    "No active tenant loans were eligible for device-control locking",
+                    tenantId,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    null,
+                    Instant.now());
+        }
+
+        Map<String, LoanRequestApplication> byLoanId = new HashMap<>();
+        for (LoanRequestApplication application : applications) {
+            byLoanId.put(application.getFineractLoanId(), application);
+        }
+
+        int evaluatedLoans = 0;
+        int overdueLoans = 0;
+        List<PendingBulkLock> pendingLocks = new ArrayList<>();
+        int offset = 0;
+        while (true) {
+            FineractGateway.LoanPage page = fineractGateway.fetchLoansPage(tenant, offset, FINERACT_PAGE_SIZE);
+            for (FineractGateway.LoanPageItem item : page.items()) {
+                if (!item.active()) {
+                    continue;
+                }
+                LoanRequestApplication application = byLoanId.get(item.id());
+                if (application == null) {
+                    continue;
+                }
+                evaluatedLoans++;
+                LoanDeviceControlState state = ensureState(application);
+                FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, item.id());
+                applySnapshot(state, snapshot);
+                if (snapshot.hasOverdueInstallment()) {
+                    overdueLoans++;
+                    queueLock(config, application, state, DeviceControlTriggerType.SCHEDULED_OVERDUE, "daily-overdue-lock-sweep", actor, pendingLocks);
+                }
+            }
+            if (!page.hasNext()) {
+                break;
+            }
+            offset += page.limit();
+        }
+
+        BulkFlushSummary summary = flushLocks(config, pendingLocks);
+        Instant ranAt = Instant.now();
+        config.setLastOverdueLockRunAt(ranAt);
+        return new DeviceControlDtos.OverdueLockSweepResponse(
+                summary.queuedLocks() == 0
+                        ? "No new overdue-device locks were queued"
+                        : "Daily overdue-loan lock sweep completed",
+                tenantId,
+                evaluatedLoans,
+                overdueLoans,
+                summary.queuedLocks(),
+                summary.succeededLocks(),
+                summary.failedLocks(),
+                summary.providerTransactionId(),
+                ranAt);
+    }
+
+    @Transactional
+    public DeviceControlDtos.UnlockSweepResponse runDailyUnlockSweep(String tenantId, String actor) {
+        TenantDeviceControlConfig config = configService.requireConfig(tenantId);
+        if (!config.isEnabled()) {
+            throw new BadRequestException("Device control is not enabled for this tenant");
+        }
+        if (!config.isUnlockEnabled()) {
+            throw new BadRequestException("Device unlock actions are not enabled for this tenant");
+        }
+
+        Tenant tenant = tenantService.getRequiredTenant(tenantId);
+        List<LoanRequestApplication> applications = applicationRepository
+                .findAllByTenantIdAndStatusAndAssignedDeviceIdIsNotNullAndAssignedDeviceImei1IsNotNullAndFineractLoanIdIsNotNullOrderByCreatedAtAsc(
+                        tenantId,
+                        ApplicationStatus.FINERACT_LOAN_ACTIVATED);
+        if (applications.isEmpty()) {
+            return new DeviceControlDtos.UnlockSweepResponse(
+                    "No active tenant loans were eligible for device-control unlocking",
+                    tenantId,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    null,
+                    Instant.now());
+        }
+
+        Map<String, LoanRequestApplication> byLoanId = new HashMap<>();
+        for (LoanRequestApplication application : applications) {
+            byLoanId.put(application.getFineractLoanId(), application);
+        }
+
+        int evaluatedLoans = 0;
+        int eligibleUnlocks = 0;
+        List<PendingBulkUnlock> pendingUnlocks = new ArrayList<>();
+        int offset = 0;
+        while (true) {
+            FineractGateway.LoanPage page = fineractGateway.fetchLoansPage(tenant, offset, FINERACT_PAGE_SIZE);
+            for (FineractGateway.LoanPageItem item : page.items()) {
+                if (!item.active()) {
+                    continue;
+                }
+                LoanRequestApplication application = byLoanId.get(item.id());
+                if (application == null) {
+                    continue;
+                }
+                evaluatedLoans++;
+                LoanDeviceControlState state = ensureState(application);
+                FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, item.id());
+                applySnapshot(state, snapshot);
+                if (!snapshot.hasOverdueInstallment() && canQueueUnlock(state)) {
+                    eligibleUnlocks++;
+                    queueUnlock(config, application, state, DeviceControlTriggerType.SCHEDULED_CLEAR, "daily-unlock-sweep", actor, pendingUnlocks);
+                }
+            }
+            if (!page.hasNext()) {
+                break;
+            }
+            offset += page.limit();
+        }
+
+        BulkFlushSummary summary = flushUnlocks(config, pendingUnlocks);
+        Instant ranAt = Instant.now();
+        return new DeviceControlDtos.UnlockSweepResponse(
+                summary.queuedLocks() == 0
+                        ? "No blocked devices were eligible for bulk unlock"
+                        : "Daily cleared-loan unlock sweep completed",
+                tenantId,
+                evaluatedLoans,
+                eligibleUnlocks,
+                summary.queuedLocks(),
+                summary.succeededLocks(),
+                summary.failedLocks(),
+                summary.providerTransactionId(),
+                ranAt);
+    }
+
     @Async
     @Transactional
-    public void handleRepaymentPosted(String tenantId, String applicationId, String fineractLoanId, String receiptId) {
+    public void handleLoanActivated(String tenantId, String applicationId, String fineractLoanId, String actor) {
         TenantDeviceControlConfig config = configRepository.findByTenantId(tenantId).orElse(null);
-        if (config == null || !config.isEnabled() || !config.isUnlockEnabled()) {
+        if (config == null || !config.isEnabled() || !config.isLockEnabled()) {
             return;
         }
         LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
                 .orElseThrow(() -> new NotFoundException("Loan application not found"));
         LoanDeviceControlState state = ensureState(application);
-        if (state.getCurrentState() != LoanDeviceControlCurrentState.LOCKED) {
+        Tenant tenant = tenantService.getRequiredTenant(tenantId);
+        FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, fineractLoanId);
+        applySnapshot(state, snapshot);
+        activateAutoLockIfEligible(config, application, state, snapshot.nextDueDate(), DeviceControlTriggerType.LOAN_ACTIVATED, "loan-activation", actor);
+    }
+
+    @Async
+    @Transactional
+    public void handleRepaymentPosted(String tenantId, String applicationId, String fineractLoanId, String receiptId) {
+        TenantDeviceControlConfig config = configRepository.findByTenantId(tenantId).orElse(null);
+        if (config == null || !config.isEnabled() || (!config.isUnlockEnabled() && !config.isLockEnabled())) {
             return;
         }
+        LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Loan application not found"));
+        LoanDeviceControlState state = ensureState(application);
         Tenant tenant = tenantService.getRequiredTenant(tenantId);
         FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, fineractLoanId);
         applySnapshot(state, snapshot);
@@ -109,7 +314,10 @@ public class DeviceControlCollectionsService {
             log.info("Keeping device locked because repayment did not clear overdue state applicationId={} receiptId={}", applicationId, receiptId);
             return;
         }
-        unlockDevice(config, application, state, DeviceControlTriggerType.PAYMENT_POSTED, "mpesa-receipt:" + receiptId, "system");
+        if (state.getCurrentState() == LoanDeviceControlCurrentState.LOCKED && config.isUnlockEnabled()) {
+            unlockDevice(config, application, state, DeviceControlTriggerType.PAYMENT_POSTED, "mpesa-receipt:" + receiptId, "system");
+        }
+        activateAutoLockIfEligible(config, application, state, snapshot.nextDueDate(), DeviceControlTriggerType.PAYMENT_POSTED, "mpesa-receipt:" + receiptId, "system");
     }
 
     @Transactional(readOnly = true)
@@ -124,6 +332,45 @@ public class DeviceControlCollectionsService {
         return actionLogRepository.findAllByTenantIdOrderByCreatedAtDesc(tenantId).stream()
                 .map(DeviceControlCollectionsService::toResponse)
                 .toList();
+    }
+
+    @Transactional
+    public DeviceControlDtos.DirectUnlockResponse unlockByImei(
+            String tenantId,
+            DeviceControlDtos.DirectUnlockRequest request,
+            String actor) {
+        TenantDeviceControlConfig config = configService.requireConfig(tenantId);
+        if (!config.isEnabled() || !config.isUnlockEnabled()) {
+            throw new BadRequestException("Device unlock actions are not enabled for this tenant");
+        }
+
+        String imei1 = request.imei1().trim();
+        if (imei1.isBlank()) {
+            throw new BadRequestException("imei1 is required");
+        }
+        if (imei1.length() > 100) {
+            throw new BadRequestException("imei1 is too long");
+        }
+        if (stateRepository.findByTenantIdAndImei2(tenantId, imei1).isPresent()) {
+            throw new BadRequestException("Only IMEI 1 is supported for unlock requests");
+        }
+
+        LoanDeviceControlState state = stateRepository.findByTenantIdAndImei1(tenantId, imei1)
+                .orElseThrow(() -> new NotFoundException("Device-control state not found for the provided IMEI 1"));
+        LoanRequestApplication application = applicationRepository.findByIdAndTenantId(state.getApplicationId(), tenantId)
+                .orElseThrow(() -> new NotFoundException("Loan application not found"));
+
+        unlockDevice(config, application, state, DeviceControlTriggerType.MANUAL, "manual-imei-unlock", actor);
+
+        return new DeviceControlDtos.DirectUnlockResponse(
+                state.getCurrentState() == LoanDeviceControlCurrentState.CLEAR
+                        ? "Device unlock request completed"
+                        : "Device unlock request submitted",
+                state.getImei1(),
+                state.getApplicationId(),
+                state.getFineractLoanId(),
+                state.getLastProviderReference(),
+                Instant.now());
     }
 
     @Transactional(readOnly = true)
@@ -273,6 +520,7 @@ public class DeviceControlCollectionsService {
         logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
         logEntry = actionLogRepository.save(logEntry);
         state.setCurrentState(LoanDeviceControlCurrentState.LOCK_PENDING);
+        updateDeviceLockStatus(state, InventoryDeviceLockStatus.LOCK_PENDING);
         pendingLocks.add(new PendingBulkLock(
                 application,
                 state,
@@ -282,6 +530,31 @@ public class DeviceControlCollectionsService {
                         logEntry.getId(),
                         config.getChannelCode(),
                         renderPaymentLink(config, application),
+                        Map.of())));
+    }
+
+    private void queueUnlock(
+            TenantDeviceControlConfig config,
+            LoanRequestApplication application,
+            LoanDeviceControlState state,
+            DeviceControlTriggerType triggerType,
+            String triggerReference,
+            String actor,
+            List<PendingBulkUnlock> pendingUnlocks) {
+        DeviceControlActionLog logEntry = newAction(application, DeviceControlActionType.UNLOCK, triggerType, null, state.getNextDueDate(), actor);
+        logEntry.setStatus(DeviceControlActionStatus.PENDING);
+        logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
+        logEntry = actionLogRepository.save(logEntry);
+        state.setCurrentState(LoanDeviceControlCurrentState.UNLOCK_PENDING);
+        updateDeviceLockStatus(state, InventoryDeviceLockStatus.UNLOCK_PENDING);
+        pendingUnlocks.add(new PendingBulkUnlock(
+                state,
+                logEntry,
+                new DeviceControlGateway.BulkActionItem(
+                        state.getImei1(),
+                        logEntry.getId(),
+                        config.getChannelCode(),
+                        null,
                         Map.of())));
     }
 
@@ -296,6 +569,7 @@ public class DeviceControlCollectionsService {
         logEntry.setStatus(DeviceControlActionStatus.PENDING);
         logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
         logEntry = actionLogRepository.save(logEntry);
+        updateDeviceLockStatus(state, InventoryDeviceLockStatus.LOCK_PENDING);
         try {
             DeviceControlGateway.RuntimeConfig runtimeConfig = configService.getRuntimeConfig(config.getTenantId());
             String transactionId = UUID.randomUUID().toString();
@@ -315,10 +589,12 @@ public class DeviceControlCollectionsService {
             state.setCurrentState(LoanDeviceControlCurrentState.LOCKED);
             state.setLastLockActionAt(Instant.now());
             state.setLastProviderReference(result.transactionId());
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.LOCKED);
         } catch (Exception ex) {
             logEntry.setStatus(DeviceControlActionStatus.FAILED);
             logEntry.setFailureReason(ex.getMessage());
             state.setCurrentState(LoanDeviceControlCurrentState.ERROR);
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.ERROR);
         }
     }
 
@@ -327,6 +603,7 @@ public class DeviceControlCollectionsService {
         logEntry.setStatus(DeviceControlActionStatus.PENDING);
         logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
         logEntry = actionLogRepository.save(logEntry);
+        updateDeviceLockStatus(state, InventoryDeviceLockStatus.UNLOCK_PENDING);
         try {
             DeviceControlGateway.RuntimeConfig runtimeConfig = configService.getRuntimeConfig(config.getTenantId());
             DeviceControlGateway.ActionResult result = deviceControlGateway.unlock(runtimeConfig, state.getImei1(), logEntry.getId());
@@ -337,10 +614,71 @@ public class DeviceControlCollectionsService {
             state.setCurrentState(LoanDeviceControlCurrentState.CLEAR);
             state.setLastUnlockActionAt(Instant.now());
             state.setLastProviderReference(result.providerReference());
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.CLEAR);
         } catch (Exception ex) {
             logEntry.setStatus(DeviceControlActionStatus.FAILED);
             logEntry.setFailureReason(ex.getMessage());
             state.setCurrentState(LoanDeviceControlCurrentState.ERROR);
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.ERROR);
+        }
+    }
+
+    private void activateAutoLockIfEligible(
+            TenantDeviceControlConfig config,
+            LoanRequestApplication application,
+            LoanDeviceControlState state,
+            LocalDate nextDueDate,
+            DeviceControlTriggerType triggerType,
+            String triggerReference,
+            String actor) {
+        if (!config.isLockEnabled() || nextDueDate == null) {
+            return;
+        }
+        if (!nextDueDate.isAfter(LocalDate.now(NAIROBI_ZONE))) {
+            return;
+        }
+        if (state.isHasOverdueInstallment()) {
+            return;
+        }
+        if (actionLogRepository.existsByApplicationIdAndDueDateAndActionTypeAndStatusIn(
+                application.getId(),
+                nextDueDate,
+                DeviceControlActionType.AUTO_LOCK_ACTIVATE,
+                Set.of(DeviceControlActionStatus.PENDING, DeviceControlActionStatus.SUCCEEDED))) {
+            return;
+        }
+
+        DeviceControlActionLog logEntry = newAction(
+                application,
+                DeviceControlActionType.AUTO_LOCK_ACTIVATE,
+                triggerType,
+                null,
+                nextDueDate,
+                actor);
+        logEntry.setStatus(DeviceControlActionStatus.PENDING);
+        logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
+        logEntry = actionLogRepository.save(logEntry);
+
+        ZonedDateTime utcDateTime = autoLockDueDateTimeUtc(nextDueDate);
+        try {
+            DeviceControlGateway.RuntimeConfig runtimeConfig = configService.getRuntimeConfig(config.getTenantId());
+            String transactionId = UUID.randomUUID().toString();
+            DeviceControlGateway.BulkActionResult result = deviceControlGateway.activateAutoLock(
+                    runtimeConfig,
+                    transactionId,
+                    List.of(new DeviceControlGateway.AutoLockItem(
+                            state.getImei1(),
+                            utcDateTime.toLocalDate(),
+                            utcDateTime.toLocalTime().withSecond(0).withNano(0))));
+            logEntry.setStatus(DeviceControlActionStatus.SUCCEEDED);
+            logEntry.setProviderTransactionId(result.transactionId());
+            logEntry.setRequestPayload(result.requestPayload());
+            logEntry.setResponsePayload(result.responsePayload());
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.AUTO_LOCK_ACTIVE);
+        } catch (Exception ex) {
+            logEntry.setStatus(DeviceControlActionStatus.FAILED);
+            logEntry.setFailureReason(ex.getMessage());
+            updateDeviceLockStatus(state, InventoryDeviceLockStatus.ERROR);
         }
     }
 
@@ -453,9 +791,9 @@ public class DeviceControlCollectionsService {
                 new DeviceControlGateway.BulkActionItem(state.getImei1(), logEntry.getId(), config.getChannelCode(), null, Map.of())));
     }
 
-    private void flushLocks(TenantDeviceControlConfig config, List<PendingBulkLock> pendingLocks) {
+    private BulkFlushSummary flushLocks(TenantDeviceControlConfig config, List<PendingBulkLock> pendingLocks) {
         if (pendingLocks.isEmpty()) {
-            return;
+            return new BulkFlushSummary(0, 0, 0, null);
         }
         String transactionId = UUID.randomUUID().toString();
         try {
@@ -471,13 +809,49 @@ public class DeviceControlCollectionsService {
                 pending.state().setCurrentState(LoanDeviceControlCurrentState.LOCKED);
                 pending.state().setLastLockActionAt(now);
                 pending.state().setLastProviderReference(result.transactionId());
+                updateDeviceLockStatus(pending.state(), InventoryDeviceLockStatus.LOCKED);
             }
+            return new BulkFlushSummary(pendingLocks.size(), pendingLocks.size(), 0, result.transactionId());
         } catch (Exception ex) {
             for (PendingBulkLock pending : pendingLocks) {
                 pending.logEntry().setStatus(DeviceControlActionStatus.FAILED);
                 pending.logEntry().setFailureReason(ex.getMessage());
                 pending.state().setCurrentState(LoanDeviceControlCurrentState.ERROR);
+                updateDeviceLockStatus(pending.state(), InventoryDeviceLockStatus.ERROR);
             }
+            return new BulkFlushSummary(pendingLocks.size(), 0, pendingLocks.size(), transactionId);
+        }
+    }
+
+    private BulkFlushSummary flushUnlocks(TenantDeviceControlConfig config, List<PendingBulkUnlock> pendingUnlocks) {
+        if (pendingUnlocks.isEmpty()) {
+            return new BulkFlushSummary(0, 0, 0, null);
+        }
+        String transactionId = UUID.randomUUID().toString();
+        try {
+            DeviceControlGateway.RuntimeConfig runtimeConfig = configService.getRuntimeConfig(config.getTenantId());
+            List<DeviceControlGateway.BulkActionItem> items = pendingUnlocks.stream().map(PendingBulkUnlock::item).toList();
+            DeviceControlGateway.BulkActionResult result = deviceControlGateway.bulkUnlock(runtimeConfig, transactionId, items);
+            Instant now = Instant.now();
+            for (PendingBulkUnlock pending : pendingUnlocks) {
+                pending.logEntry().setStatus(DeviceControlActionStatus.SUCCEEDED);
+                pending.logEntry().setProviderTransactionId(result.transactionId());
+                pending.logEntry().setRequestPayload(result.requestPayload());
+                pending.logEntry().setResponsePayload(result.responsePayload());
+                pending.state().setCurrentState(LoanDeviceControlCurrentState.CLEAR);
+                pending.state().setLastUnlockActionAt(now);
+                pending.state().setLastProviderReference(result.transactionId());
+                updateDeviceLockStatus(pending.state(), InventoryDeviceLockStatus.CLEAR);
+            }
+            return new BulkFlushSummary(pendingUnlocks.size(), pendingUnlocks.size(), 0, result.transactionId());
+        } catch (Exception ex) {
+            for (PendingBulkUnlock pending : pendingUnlocks) {
+                pending.logEntry().setStatus(DeviceControlActionStatus.FAILED);
+                pending.logEntry().setFailureReason(ex.getMessage());
+                pending.state().setCurrentState(LoanDeviceControlCurrentState.ERROR);
+                updateDeviceLockStatus(pending.state(), InventoryDeviceLockStatus.ERROR);
+            }
+            return new BulkFlushSummary(pendingUnlocks.size(), 0, pendingUnlocks.size(), transactionId);
         }
     }
 
@@ -584,6 +958,23 @@ public class DeviceControlCollectionsService {
         return action;
     }
 
+    private ZonedDateTime autoLockDueDateTimeUtc(LocalDate nextDueDate) {
+        return ZonedDateTime.of(nextDueDate, AUTO_LOCK_TIME_NAIROBI, NAIROBI_ZONE)
+                .withZoneSameInstant(ZoneOffset.UTC);
+    }
+
+    private void updateDeviceLockStatus(LoanDeviceControlState state, InventoryDeviceLockStatus lockStatus) {
+        if (state.getDeviceId() == null) {
+            return;
+        }
+        InventoryDevice device = inventoryDeviceRepository.findByIdAndTenantId(state.getDeviceId(), state.getTenantId())
+                .orElse(null);
+        if (device == null) {
+            return;
+        }
+        device.setLockStatus(lockStatus);
+    }
+
     private Map<String, String> buildCustomNotificationFields(
             TenantDeviceControlConfig config,
             LoanRequestApplication application,
@@ -641,6 +1032,12 @@ public class DeviceControlCollectionsService {
         String last = lastName == null ? "" : lastName.trim();
         String value = (first + " " + last).trim();
         return value.isEmpty() ? null : value;
+    }
+
+    private boolean canQueueUnlock(LoanDeviceControlState state) {
+        return state.getCurrentState() == LoanDeviceControlCurrentState.LOCKED
+                || state.getCurrentState() == LoanDeviceControlCurrentState.LOCK_PENDING
+                || state.getCurrentState() == LoanDeviceControlCurrentState.UNLOCK_PENDING;
     }
 
     private boolean shouldRun(Instant lastRunAt, Integer cadenceMinutes, Instant now) {
@@ -710,6 +1107,19 @@ public class DeviceControlCollectionsService {
             LoanDeviceControlState state,
             DeviceControlActionLog logEntry,
             DeviceControlGateway.BulkActionItem item) {
+    }
+
+    private record PendingBulkUnlock(
+            LoanDeviceControlState state,
+            DeviceControlActionLog logEntry,
+            DeviceControlGateway.BulkActionItem item) {
+    }
+
+    private record BulkFlushSummary(
+            int queuedLocks,
+            int succeededLocks,
+            int failedLocks,
+            String providerTransactionId) {
     }
 
     private record PendingNotificationBatch(

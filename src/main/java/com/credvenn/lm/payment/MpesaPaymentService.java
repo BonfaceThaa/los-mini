@@ -43,21 +43,31 @@ public class MpesaPaymentService {
     }
 
     @Transactional
-    public PaymentDtos.DarajaCallbackAcknowledgement acceptDarajaCallback(PaymentDtos.DarajaCallbackRequest request) {
-        String receiptNumber = request.TransID().trim();
+    public void acceptDarajaCallback(
+            String transId,
+            String transTime,
+            BigDecimal transAmount,
+            String businessShortCode,
+            String billRefNumber,
+            String msisdn,
+            String firstName,
+            String middleName,
+            String lastName,
+            String rawPayload) {
+        String receiptNumber = transId.trim();
         if (!receiptRepository.existsByMpesaReceiptNumber(receiptNumber)) {
             MpesaPaymentReceipt receipt = new MpesaPaymentReceipt();
-            receipt.setBusinessShortCode(request.BusinessShortCode().trim());
-            receipt.setBillRefNumber(request.BillRefNumber().trim());
-            receipt.setTransactionAmount(request.TransAmount());
-            receipt.setTransactionTime(parseTransactionTime(request.TransTime()));
+            receipt.setBusinessShortCode(businessShortCode.trim());
+            receipt.setBillRefNumber(billRefNumber.trim());
+            receipt.setTransactionAmount(transAmount);
+            receipt.setTransactionTime(parseTransactionTime(transTime));
             receipt.setMpesaReceiptNumber(receiptNumber);
-            receipt.setMsisdn(request.MSISDN());
-            receipt.setPayerFirstName(request.FirstName());
-            receipt.setPayerMiddleName(request.MiddleName());
-            receipt.setPayerLastName(request.LastName());
+            receipt.setMsisdn(msisdn);
+            receipt.setPayerFirstName(firstName);
+            receipt.setPayerMiddleName(middleName);
+            receipt.setPayerLastName(lastName);
             receipt.setProcessingStatus(MpesaPaymentProcessingStatus.RECEIVED);
-            receipt.setRawPayload(toJson(request));
+            receipt.setRawPayload(rawPayload);
             receipt = receiptRepository.save(receipt);
             log.info(
                     "Stored Mpesa receipt id={} receiptNumber={} shortCode={} amount={} and publishing processing event",
@@ -69,38 +79,41 @@ public class MpesaPaymentService {
         } else {
             log.info("Ignoring duplicate Mpesa callback for receiptNumber={}", receiptNumber);
         }
-        return new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted");
     }
 
     @Transactional
-    public PaymentDtos.DarajaCallbackAcknowledgement acceptStkCallback(String tenantId, PaymentDtos.DarajaStkCallbackRequest request) {
-        PaymentDtos.DarajaStkCallbackRequest.StkCallback callback = request.Body().stkCallback();
-        String checkoutRequestId = callback.CheckoutRequestID();
+    public void acceptStkCallback(
+            String tenantId,
+            String checkoutRequestId,
+            Integer resultCode,
+            String resultDesc,
+            List<Map.Entry<String, Object>> metadataItems,
+            String rawProviderResponse) {
         MpesaStkPushRequest stkRequest = stkPushRequestRepository.findByCheckoutRequestId(checkoutRequestId)
                 .orElseThrow(() -> new NotFoundException("STK push request not found"));
         if (!tenantId.equals(stkRequest.getTenantId())) {
             throw new NotFoundException("STK push request not found");
         }
 
-        stkRequest.setProviderResponseCode(String.valueOf(callback.ResultCode()));
-        stkRequest.setProviderResponseDescription(callback.ResultDesc());
-        stkRequest.setRawProviderResponse(request.toString());
+        stkRequest.setProviderResponseCode(String.valueOf(resultCode));
+        stkRequest.setProviderResponseDescription(resultDesc);
+        stkRequest.setRawProviderResponse(rawProviderResponse);
 
-        if (callback.ResultCode() == null || callback.ResultCode() != 0) {
+        if (resultCode == null || resultCode != 0) {
             stkRequest.setStatus(MpesaStkPushRequestStatus.FAILED);
-            stkRequest.setFailureReason(callback.ResultDesc());
-            return new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted");
+            stkRequest.setFailureReason(resultDesc);
+            return;
         }
 
-        Map<String, Object> metadata = toMetadataMap(callback.CallbackMetadata());
+        Map<String, Object> metadata = toMetadataMap(metadataItems);
         String receiptNumber = text(metadata.get("MpesaReceiptNumber"));
         if (receiptNumber == null || receiptNumber.isBlank()) {
             stkRequest.setStatus(MpesaStkPushRequestStatus.FAILED);
             stkRequest.setFailureReason("Successful STK callback did not include MpesaReceiptNumber");
-            return new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted");
+            return;
         }
         if (receiptRepository.findByMatchedApplicationIdAndMpesaReceiptNumber(stkRequest.getApplicationId(), receiptNumber).isPresent()) {
-            return new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted");
+            return;
         }
 
         MpesaPaymentReceipt receipt = new MpesaPaymentReceipt();
@@ -119,7 +132,7 @@ public class MpesaPaymentService {
         if (matchedApplication.isPresent()) {
             receipt.setMatchedFineractClientId(matchedApplication.get().getFineractClientId());
         }
-        receipt.setRawPayload(request.toString());
+        receipt.setRawPayload(rawProviderResponse);
         receipt = receiptRepository.save(receipt);
         stkRequest.setStatus(MpesaStkPushRequestStatus.ACCEPTED);
         eventPublisher.publishEvent(new MpesaPaymentAcceptedEvent(receipt.getId()));
@@ -130,81 +143,41 @@ public class MpesaPaymentService {
                 stkRequest.getFineractLoanId(),
                 LoggingContext.maskPhone(stkRequest.getNormalizedPhoneNumber()),
                 receiptNumber);
-        return new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted");
     }
 
     @Transactional(readOnly = true)
-    public List<PaymentDtos.MpesaPaymentReceiptResponse> listReceipts() {
+    public List<MpesaPaymentReceipt> listReceipts() {
         return receiptRepository.findAllByProcessingStatusInOrderByCreatedAtDesc(Set.of(
                         MpesaPaymentProcessingStatus.RECEIVED,
                         MpesaPaymentProcessingStatus.PROCESSING,
                         MpesaPaymentProcessingStatus.LOAN_NOT_FOUND,
                         MpesaPaymentProcessingStatus.REPAYMENT_FAILED,
-                        MpesaPaymentProcessingStatus.FAILED))
-                .stream()
-                .map(MpesaPaymentService::toResponse)
-                .toList();
+                        MpesaPaymentProcessingStatus.FAILED));
     }
 
     @Transactional(readOnly = true)
-    public PaymentDtos.MpesaPaymentReceiptResponse getReceipt(String receiptId) {
-        return toResponse(receiptRepository.findById(receiptId)
-                .orElseThrow(() -> new NotFoundException("Mpesa payment receipt not found")));
+    public MpesaPaymentReceipt getReceipt(String receiptId) {
+        return receiptRepository.findById(receiptId)
+                .orElseThrow(() -> new NotFoundException("Mpesa payment receipt not found"));
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public PaymentDtos.RetryMpesaPaymentReceiptResponse retryReceipt(String receiptId) {
+    public MpesaPaymentReceipt retryReceipt(String receiptId) {
         MpesaPaymentReceipt receipt = receiptRepository.findById(receiptId)
                 .orElseThrow(() -> new NotFoundException("Mpesa payment receipt not found"));
         if (receipt.getProcessingStatus() == MpesaPaymentProcessingStatus.REPAYMENT_POSTED) {
-            return new PaymentDtos.RetryMpesaPaymentReceiptResponse(
-                    receipt.getId(),
-                    receipt.getProcessingStatus(),
-                    "Repayment was already posted for this receipt.");
+            return receipt;
         }
         receipt.setProcessingStatus(MpesaPaymentProcessingStatus.RECEIVED);
         receipt.setFailureReason(null);
         receipt.setProcessingStartedAt(null);
         receipt.setProcessedAt(null);
         eventPublisher.publishEvent(new MpesaPaymentAcceptedEvent(receipt.getId()));
-        return new PaymentDtos.RetryMpesaPaymentReceiptResponse(
-                receipt.getId(),
-                receipt.getProcessingStatus(),
-                "Receipt queued for background retry.");
-    }
-
-    static PaymentDtos.MpesaPaymentReceiptResponse toResponse(MpesaPaymentReceipt receipt) {
-        return new PaymentDtos.MpesaPaymentReceiptResponse(
-                receipt.getId(),
-                receipt.getTenantId(),
-                receipt.getBusinessShortCode(),
-                receipt.getBillRefNumber(),
-                receipt.getNormalizedPhoneNumber(),
-                receipt.getTransactionAmount(),
-                receipt.getTransactionTime(),
-                receipt.getMpesaReceiptNumber(),
-                receipt.getMsisdn(),
-                receipt.getPayerFirstName(),
-                receipt.getPayerMiddleName(),
-                receipt.getPayerLastName(),
-                receipt.getProcessingStatus(),
-                receipt.getMatchedApplicationId(),
-                receipt.getMatchedFineractClientId(),
-                receipt.getMatchedFineractLoanId(),
-                receipt.getFineractTransactionId(),
-                receipt.getFailureReason(),
-                receipt.getProcessingStartedAt(),
-                receipt.getProcessedAt(),
-                receipt.getCreatedAt(),
-                receipt.getUpdatedAt());
+        return receipt;
     }
 
     private Instant parseTransactionTime(String value) {
         return LocalDateTime.parse(value.trim(), TRANSACTION_TIME_FORMAT).atZone(MPESA_ZONE).toInstant();
-    }
-
-    private String toJson(PaymentDtos.DarajaCallbackRequest request) {
-        return request.toString();
     }
 
     private Instant parseCallbackTransactionTime(String value) {
@@ -214,14 +187,14 @@ public class MpesaPaymentService {
         return parseTransactionTime(value);
     }
 
-    private Map<String, Object> toMetadataMap(List<PaymentDtos.DarajaStkCallbackRequest.CallbackMetadataItem> items) {
+    private Map<String, Object> toMetadataMap(List<Map.Entry<String, Object>> items) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         if (items == null) {
             return metadata;
         }
-        for (PaymentDtos.DarajaStkCallbackRequest.CallbackMetadataItem item : items) {
-            if (item != null && item.Name() != null) {
-                metadata.put(item.Name(), item.Value());
+        for (Map.Entry<String, Object> item : items) {
+            if (item != null && item.getKey() != null) {
+                metadata.put(item.getKey(), item.getValue());
             }
         }
         return metadata;

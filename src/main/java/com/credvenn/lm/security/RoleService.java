@@ -1,13 +1,18 @@
 package com.credvenn.lm.security;
 
+import com.credvenn.lm.common.api.PagedResponse;
+import com.credvenn.lm.common.api.PaginationSupport;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.ConflictException;
 import com.credvenn.lm.common.exception.ForbiddenOperationException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.tenant.TenantRepository;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +24,16 @@ public class RoleService {
             PermissionCatalog.TENANT_MANAGE_ALL.code(),
             PermissionCatalog.TENANT_SUBSCRIPTION_MANAGE.code(),
             PermissionCatalog.TENANT_VIEW_ALL.code());
+    private static final Map<String, String> ROLE_SORTS = new LinkedHashMap<>();
+
+    static {
+        ROLE_SORTS.put("name", "name");
+        ROLE_SORTS.put("code", "code");
+        ROLE_SORTS.put("active", "active");
+        ROLE_SORTS.put("systemRole", "systemRole");
+        ROLE_SORTS.put("createdAt", "createdAt");
+        ROLE_SORTS.put("updatedAt", "updatedAt");
+    }
 
     private final RoleRepository roleRepository;
     private final PermissionRepository permissionRepository;
@@ -44,9 +59,35 @@ public class RoleService {
     }
 
     @Transactional(readOnly = true)
+    public PagedResponse<RoleDtos.RoleResponse> listCurrentTenantRoles(
+            Integer page,
+            Integer size,
+            String sortBy,
+            String sortDir) {
+        AuthenticatedUser actor = currentActorService.requireCurrentUser();
+        ensureTenantBound(actor);
+        return listRolesForTenant(actor.tenantId(), page, size, sortBy, sortDir);
+    }
+
+    @Transactional(readOnly = true)
     public List<RoleDtos.RoleResponse> listRolesForTenant(String tenantId) {
         assertTenantExists(tenantId);
         return roleRepository.findAllByTenantIdOrderByNameAsc(tenantId).stream().map(RoleService::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<RoleDtos.RoleResponse> listRolesForTenant(
+            String tenantId,
+            Integer page,
+            Integer size,
+            String sortBy,
+            String sortDir) {
+        assertTenantExists(tenantId);
+        Pageable pageable = PaginationSupport.pageable(page, size, sortBy, sortDir, ROLE_SORTS, "name");
+        String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, ROLE_SORTS, "name");
+        String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
+        var resultPage = roleRepository.findAllByTenantId(tenantId, pageable).map(RoleService::toResponse);
+        return PagedResponse.fromPage(resultPage, normalizedSortBy, normalizedSortDir);
     }
 
     @Transactional(readOnly = true)

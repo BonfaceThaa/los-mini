@@ -1,5 +1,7 @@
 package com.credvenn.lm.user;
 
+import com.credvenn.lm.common.api.PagedResponse;
+import com.credvenn.lm.common.api.PaginationSupport;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.ConflictException;
 import com.credvenn.lm.common.exception.ForbiddenOperationException;
@@ -10,14 +12,28 @@ import com.credvenn.lm.security.Role;
 import com.credvenn.lm.security.RoleService;
 import com.credvenn.lm.subscription.SubscriptionGuardService;
 import com.credvenn.lm.tenant.TenantRepository;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserService {
+
+    private static final Map<String, String> USER_SORTS = new LinkedHashMap<>();
+
+    static {
+        USER_SORTS.put("username", "username");
+        USER_SORTS.put("email", "email");
+        USER_SORTS.put("active", "active");
+        USER_SORTS.put("createdAt", "createdAt");
+        USER_SORTS.put("updatedAt", "updatedAt");
+        USER_SORTS.put("lastLoginAt", "lastLoginAt");
+    }
 
     private final AppUserRepository userRepository;
     private final RoleService roleService;
@@ -49,9 +65,35 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
+    public PagedResponse<UserDtos.UserResponse> listCurrentTenantUsers(
+            Integer page,
+            Integer size,
+            String sortBy,
+            String sortDir) {
+        AuthenticatedUser actor = currentActorService.requireCurrentUser();
+        ensureTenantBound(actor);
+        return listUsersByTenant(actor.tenantId(), page, size, sortBy, sortDir);
+    }
+
+    @Transactional(readOnly = true)
     public List<UserDtos.UserResponse> listUsersByTenant(String tenantId) {
         assertTenantExists(tenantId);
         return userRepository.findAllByTenantIdOrderByUsernameAsc(tenantId).stream().map(UserService::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<UserDtos.UserResponse> listUsersByTenant(
+            String tenantId,
+            Integer page,
+            Integer size,
+            String sortBy,
+            String sortDir) {
+        assertTenantExists(tenantId);
+        Pageable pageable = PaginationSupport.pageable(page, size, sortBy, sortDir, USER_SORTS, "username");
+        String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, USER_SORTS, "username");
+        String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
+        var resultPage = userRepository.findAllByTenantId(tenantId, pageable).map(UserService::toResponse);
+        return PagedResponse.fromPage(resultPage, normalizedSortBy, normalizedSortDir);
     }
 
     @Transactional(readOnly = true)

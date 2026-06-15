@@ -38,6 +38,12 @@ app:
       username: superadmin
       email: superadmin@credvenn.com
       password: ChangeMe123!
+  device-control:
+    scheduling:
+      enabled: false
+      tenant-sweeps-enabled: false
+      daily-overdue-locks-enabled: false
+      daily-unlocks-enabled: false
   security:
     encryption-key: CHANGE_ME_TO_A_LONG_RANDOM_SECRET
     cors:
@@ -90,9 +96,9 @@ app:
       date-format: dd MMMM yyyy
       transaction-processing-strategy-code: advanced-payment-allocation-strategy
     cladfy:
-      base-url: https://service.cladfy.com/v1
-      api-key: CHANGE_ME
-      webhook-base-url: http://localhost:8080
+      base-url: https://k.yomia.ke/v1
+      api-key: a2e10cdc94a7976c8756b8ea87e69e754d4831b1222cfd93d182bf0f185ad303
+      webhook-base-url: https://api.credvenn.com
   document:
     storage:
       provider: LOCAL

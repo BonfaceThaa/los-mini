@@ -13,6 +13,11 @@ public record FineractProperties(
         String dateFormat,
         String transactionProcessingStrategyCode) {
 
+    @Override
+    public Integer defaultOfficeId() {
+        return defaultOfficeId == null ? 1 : defaultOfficeId;
+    }
+
     public Integer resolvedLegalFormId() {
         return legalFormId == null ? 1 : legalFormId;
     }

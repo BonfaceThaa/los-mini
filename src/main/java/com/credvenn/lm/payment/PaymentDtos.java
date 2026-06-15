@@ -43,7 +43,45 @@ public final class PaymentDtos {
             DarajaEnvironment environment,
             String businessShortCode,
             String callbackUrl,
-            boolean hasCredentials) {
+            boolean hasCredentials,
+            C2bRegistrationSummary c2bRegistration) {
+    }
+
+    @Schema(name = "C2bRegistrationSummary")
+    public record C2bRegistrationSummary(
+            String confirmationUrl,
+            String validationUrl,
+            String responseType,
+            Instant lastRegisteredAt,
+            Instant lastRequestedAt,
+            String lastResponseCode,
+            String lastResponseDescription,
+            String lastOriginatorConversationId) {
+
+        public static C2bRegistrationSummary from(TenantMpesaIntegrationConfig config) {
+            if (config == null) {
+                return null;
+            }
+            if (config.c2bConfirmationUrl() == null
+                    && config.c2bValidationUrl() == null
+                    && config.c2bResponseType() == null
+                    && config.c2bLastRegisteredAt() == null
+                    && config.c2bLastRequestedAt() == null
+                    && config.c2bLastResponseCode() == null
+                    && config.c2bLastResponseDescription() == null
+                    && config.c2bLastOriginatorConversationId() == null) {
+                return null;
+            }
+            return new C2bRegistrationSummary(
+                    config.c2bConfirmationUrl(),
+                    config.c2bValidationUrl(),
+                    config.c2bResponseType(),
+                    config.c2bLastRegisteredAt(),
+                    config.c2bLastRequestedAt(),
+                    config.c2bLastResponseCode(),
+                    config.c2bLastResponseDescription(),
+                    config.c2bLastOriginatorConversationId());
+        }
     }
 
     @Schema(name = "TenantPaymentChannelResponse")
@@ -57,6 +95,50 @@ public final class PaymentDtos {
             TenantMpesaIntegrationConfigSummary integration,
             Instant createdAt,
             Instant updatedAt) {
+
+        public static TenantPaymentChannelResponse from(TenantPaymentChannel channel, TenantMpesaIntegrationConfig config) {
+            return new TenantPaymentChannelResponse(
+                    channel.getId(),
+                    channel.getTenantId(),
+                    channel.getChannelType(),
+                    channel.getShortCode(),
+                    channel.isActive(),
+                    channel.getDescription(),
+                    config == null
+                            ? null
+                            : new TenantMpesaIntegrationConfigSummary(
+                                    config.environment(),
+                                    config.businessShortCode(),
+                                    config.callbackUrl(),
+                                    config.hasEncryptedCredentials(),
+                                    C2bRegistrationSummary.from(config)),
+                    channel.getCreatedAt(),
+                    channel.getUpdatedAt());
+        }
+    }
+
+    @Schema(name = "RegisterTenantC2bUrlsRequest")
+    public record RegisterTenantC2bUrlsRequest(
+            @NotBlank String confirmationUrl,
+            String validationUrl,
+            @NotBlank
+            @Pattern(regexp = "^(Completed|Cancelled)$", message = "responseType must be Completed or Cancelled")
+            String responseType) {
+    }
+
+    @Schema(name = "RegisterTenantC2bUrlsResponse")
+    public record RegisterTenantC2bUrlsResponse(
+            String tenantId,
+            String channelId,
+            String shortCode,
+            String confirmationUrl,
+            String validationUrl,
+            String responseType,
+            Instant requestedAt,
+            Instant registeredAt,
+            String responseCode,
+            String responseDescription,
+            String originatorConversationId) {
     }
 
     @Schema(name = "DarajaCallbackRequest")
@@ -80,6 +162,50 @@ public final class PaymentDtos {
     public record DarajaCallbackAcknowledgement(
             int ResultCode,
             String ResultDesc) {
+    }
+
+    @Schema(name = "DepositPaymentResponse")
+    public record DepositPaymentResponse(
+            String id,
+            String tenantId,
+            String businessShortCode,
+            String billRefNumber,
+            String normalizedPhoneNumber,
+            BigDecimal transactionAmount,
+            Instant transactionTime,
+            String mpesaReceiptNumber,
+            String msisdn,
+            String payerFirstName,
+            String payerMiddleName,
+            String payerLastName,
+            DepositPaymentStatus status,
+            String matchedApplicationId,
+            String matchedFineractClientId,
+            String failureReason,
+            Instant createdAt,
+            Instant updatedAt) {
+
+        public static DepositPaymentResponse from(DepositPayment payment) {
+            return new DepositPaymentResponse(
+                    payment.getId(),
+                    payment.getTenantId(),
+                    payment.getBusinessShortCode(),
+                    payment.getBillRefNumber(),
+                    payment.getNormalizedPhoneNumber(),
+                    payment.getTransactionAmount(),
+                    payment.getTransactionTime(),
+                    payment.getMpesaReceiptNumber(),
+                    payment.getMsisdn(),
+                    payment.getPayerFirstName(),
+                    payment.getPayerMiddleName(),
+                    payment.getPayerLastName(),
+                    payment.getStatus(),
+                    payment.getMatchedApplicationId(),
+                    payment.getMatchedFineractClientId(),
+                    payment.getFailureReason(),
+                    payment.getCreatedAt(),
+                    payment.getUpdatedAt());
+        }
     }
 
     @Schema(name = "MpesaPaymentReceiptResponse")
@@ -106,6 +232,32 @@ public final class PaymentDtos {
             Instant processedAt,
             Instant createdAt,
             Instant updatedAt) {
+
+        public static MpesaPaymentReceiptResponse from(MpesaPaymentReceipt receipt) {
+            return new MpesaPaymentReceiptResponse(
+                    receipt.getId(),
+                    receipt.getTenantId(),
+                    receipt.getBusinessShortCode(),
+                    receipt.getBillRefNumber(),
+                    receipt.getNormalizedPhoneNumber(),
+                    receipt.getTransactionAmount(),
+                    receipt.getTransactionTime(),
+                    receipt.getMpesaReceiptNumber(),
+                    receipt.getMsisdn(),
+                    receipt.getPayerFirstName(),
+                    receipt.getPayerMiddleName(),
+                    receipt.getPayerLastName(),
+                    receipt.getProcessingStatus(),
+                    receipt.getMatchedApplicationId(),
+                    receipt.getMatchedFineractClientId(),
+                    receipt.getMatchedFineractLoanId(),
+                    receipt.getFineractTransactionId(),
+                    receipt.getFailureReason(),
+                    receipt.getProcessingStartedAt(),
+                    receipt.getProcessedAt(),
+                    receipt.getCreatedAt(),
+                    receipt.getUpdatedAt());
+        }
     }
 
     @Schema(name = "MpesaPaymentReceiptListResponse")

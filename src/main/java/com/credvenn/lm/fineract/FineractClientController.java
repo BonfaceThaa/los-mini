@@ -1,14 +1,15 @@
 package com.credvenn.lm.fineract;
 
+import com.credvenn.lm.common.api.PagedResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -26,8 +27,12 @@ public class FineractClientController {
     @GetMapping
     @PreAuthorize("hasAuthority('CLIENT_VIEW')")
     @Operation(summary = "List Fineract clients for the authenticated tenant")
-    public ResponseEntity<List<FineractDtos.FineractClientResponse>> listClients() {
-        return ResponseEntity.ok(fineractClientService.listCurrentTenantClients());
+    public ResponseEntity<PagedResponse<FineractDtos.FineractClientResponse>> listClients(
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "20") Integer size,
+            @RequestParam(defaultValue = "displayName") String sortBy,
+            @RequestParam(defaultValue = "asc") String sortDir) {
+        return ResponseEntity.ok(fineractClientService.listCurrentTenantClients(page, size, sortBy, sortDir));
     }
 
     @GetMapping("/{clientId}")

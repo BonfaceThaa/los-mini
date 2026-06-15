@@ -33,7 +33,12 @@ public class PaymentPageController {
     @PreAuthorize("hasAuthority('SERVICE_TENANT_BRANDING_READ')")
     @Operation(summary = "Get tenant branding for the payment page")
     public ResponseEntity<PaymentDtos.PaymentPageBrandingResponse> getBranding() {
-        return ResponseEntity.ok(paymentPageService.getBranding(currentServiceActorService.requireCurrentService()));
+        var branding = paymentPageService.getBranding(currentServiceActorService.requireCurrentService());
+        return ResponseEntity.ok(new PaymentDtos.PaymentPageBrandingResponse(
+                branding.displayName(),
+                branding.logoUrl(),
+                branding.supportPhone(),
+                branding.paymentInstructions()));
     }
 
     @PostMapping("/stk-push")
@@ -41,8 +46,9 @@ public class PaymentPageController {
     @Operation(summary = "Initiate a tenant STK push from the payment page")
     public ResponseEntity<PaymentDtos.PaymentPageAcknowledgementResponse> initiateStkPush(
             @Valid @RequestBody PaymentDtos.InitiatePaymentPageStkPushRequest request) {
-        return ResponseEntity.ok(paymentPageService.initiateStkPush(
+        paymentPageService.initiateStkPush(
                 currentServiceActorService.requireCurrentService(),
-                request));
+                request.phoneNumber());
+        return ResponseEntity.ok(new PaymentDtos.PaymentPageAcknowledgementResponse("STK push request received."));
     }
 }

@@ -1,14 +1,30 @@
 package com.credvenn.lm.inventory;
 
+import com.credvenn.lm.common.api.PagedResponse;
+import com.credvenn.lm.common.api.PaginationSupport;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InventoryService {
+
+    private static final Map<String, String> INVENTORY_SORTS = new LinkedHashMap<>();
+
+    static {
+        INVENTORY_SORTS.put("deviceName", "deviceName");
+        INVENTORY_SORTS.put("serialNumber", "serialNumber");
+        INVENTORY_SORTS.put("status", "status");
+        INVENTORY_SORTS.put("cashPrice", "cashPrice");
+        INVENTORY_SORTS.put("createdAt", "createdAt");
+        INVENTORY_SORTS.put("updatedAt", "updatedAt");
+    }
 
     private final InventoryDeviceRepository deviceRepository;
 
@@ -29,12 +45,27 @@ public class InventoryService {
         device.setDepositType(request.depositType());
         device.setDepositValue(request.depositValue());
         device.setStatus(InventoryDeviceStatus.AVAILABLE);
+        device.setLockStatus(InventoryDeviceLockStatus.CLEAR);
         return toResponse(deviceRepository.save(device));
     }
 
     @Transactional(readOnly = true)
     public List<InventoryDtos.InventoryDeviceResponse> list(String tenantId) {
         return deviceRepository.findAllByTenantIdOrderByDeviceNameAsc(tenantId).stream().map(InventoryService::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<InventoryDtos.InventoryDeviceResponse> list(
+            String tenantId,
+            Integer page,
+            Integer size,
+            String sortBy,
+            String sortDir) {
+        Pageable pageable = PaginationSupport.pageable(page, size, sortBy, sortDir, INVENTORY_SORTS, "deviceName");
+        String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, INVENTORY_SORTS, "deviceName");
+        String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
+        var resultPage = deviceRepository.findAllByTenantId(tenantId, pageable).map(InventoryService::toResponse);
+        return PagedResponse.fromPage(resultPage, normalizedSortBy, normalizedSortDir);
     }
 
     @Transactional(readOnly = true)
@@ -64,6 +95,7 @@ public class InventoryService {
                 device.getDepositType(),
                 device.getDepositValue(),
                 device.getStatus(),
+                device.getLockStatus(),
                 device.getCreatedAt(),
                 device.getUpdatedAt());
     }

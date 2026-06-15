@@ -15,9 +15,11 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -182,6 +184,55 @@ public class HttpFineractGateway implements FineractGateway {
         String resourceId = extractResourceId(response);
         log.info("Created Fineract loan product resourceId={}", resourceId);
         return resourceId;
+    }
+
+    @Override
+    public CreatedGlAccount createGlAccount(Tenant tenant, CreateGlAccountRequest request) {
+        log.info("Creating Fineract GL account name={} glCode={} type={} usage={}",
+                request.name(),
+                request.glCode(),
+                request.type(),
+                request.usage());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", request.name());
+        payload.put("glCode", request.glCode());
+        payload.put("manualEntriesAllowed", request.manualEntriesAllowed());
+        payload.put("type", request.type());
+        payload.put("usage", request.usage());
+        if (request.parentId() != null) {
+            payload.put("parentId", request.parentId());
+        }
+        if (request.tagId() != null) {
+            payload.put("tagId", request.tagId());
+        }
+        if (request.description() != null && !request.description().isBlank()) {
+            payload.put("description", request.description());
+        }
+        Map<?, ?> response = post("/glaccounts", tenant, payload);
+        String resourceId = extractResourceId(response);
+        log.info("Created Fineract GL account resourceId={} glCode={}", resourceId, request.glCode());
+        return new CreatedGlAccount(Long.parseLong(resourceId), request.glCode());
+    }
+
+    @Override
+    public CreatedAccountingRule createAccountingRule(Tenant tenant, CreateAccountingRuleRequest request) {
+        log.info("Creating Fineract accounting rule name={} officeId={} debitAccountId={} creditAccountId={}",
+                request.name(),
+                request.officeId(),
+                request.accountToDebit(),
+                request.accountToCredit());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", request.name());
+        payload.put("officeId", request.officeId());
+        payload.put("accountToDebit", request.accountToDebit());
+        payload.put("accountToCredit", request.accountToCredit());
+        if (request.description() != null && !request.description().isBlank()) {
+            payload.put("description", request.description());
+        }
+        Map<?, ?> response = post("/accountingrules", tenant, payload);
+        String resourceId = extractResourceId(response);
+        log.info("Created Fineract accounting rule resourceId={} name={}", resourceId, request.name());
+        return new CreatedAccountingRule(Long.parseLong(resourceId), request.name());
     }
 
     @Override
@@ -402,6 +453,83 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     @Override
+    public RepaymentSchedule fetchLoanRepaymentSchedule(Tenant tenant, String fineractLoanId) {
+        log.info("Fetching Fineract repayment schedule fineractLoanId={} tenantFineractId={}", fineractLoanId, tenant.getFineractTenantId());
+        Object response = restClient.get()
+                .uri("/loans/{loanId}?associations=repaymentSchedule", fineractLoanId)
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        if (!(response instanceof Map<?, ?> map) || !(map.get("repaymentSchedule") instanceof Map<?, ?> repaymentSchedule)) {
+            throw new NotFoundException("Fineract repayment schedule not found");
+        }
+        return toRepaymentSchedule((Map<String, Object>) repaymentSchedule);
+    }
+
+    @Override
+    public JournalEntryPage fetchJournalEntries(Tenant tenant, JournalEntryQuery query) {
+        log.info("Fetching Fineract journal entries tenantFineractId={} transactionId={} loanId={}",
+                tenant.getFineractTenantId(),
+                query.transactionId(),
+                query.loanId());
+        Object response = restClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path("/journalentries");
+                    if (query.offset() != null) {
+                        builder.queryParam("offset", query.offset());
+                    }
+                    if (query.limit() != null) {
+                        builder.queryParam("limit", query.limit());
+                    }
+                    if (query.orderBy() != null && !query.orderBy().isBlank()) {
+                        builder.queryParam("orderBy", query.orderBy().trim());
+                    }
+                    if (query.sortBy() != null && !query.sortBy().isBlank()) {
+                        builder.queryParam("sortBy", query.sortBy().trim());
+                    }
+                    if (query.officeId() != null) {
+                        builder.queryParam("officeId", query.officeId());
+                    }
+                    if (query.glAccountId() != null) {
+                        builder.queryParam("glAccountId", query.glAccountId());
+                    }
+                    if (query.manualEntriesOnly() != null) {
+                        builder.queryParam("manualEntriesOnly", query.manualEntriesOnly());
+                    }
+                    if (query.fromDate() != null) {
+                        builder.queryParam("fromDate", query.fromDate());
+                    }
+                    if (query.toDate() != null) {
+                        builder.queryParam("toDate", query.toDate());
+                    }
+                    if (query.transactionId() != null && !query.transactionId().isBlank()) {
+                        builder.queryParam("transactionId", query.transactionId().trim());
+                    }
+                    if (query.transactionDetails() != null) {
+                        builder.queryParam("transactionDetails", query.transactionDetails());
+                    }
+                    if (query.runningBalance() != null) {
+                        builder.queryParam("runningBalance", query.runningBalance());
+                    }
+                    if (query.loanId() != null) {
+                        builder.queryParam("loanId", query.loanId());
+                    }
+                    return builder.build();
+                })
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        if (!(response instanceof Map<?, ?> map)) {
+            return new JournalEntryPage(0, List.of());
+        }
+        Integer totalFilteredRecords = integer(map.get("totalFilteredRecords"));
+        List<JournalEntry> entries = extractItems(response, "pageItems", "content", "journalEntries").stream()
+                .map(this::toJournalEntry)
+                .toList();
+        return new JournalEntryPage(totalFilteredRecords == null ? entries.size() : totalFilteredRecords, entries);
+    }
+
+    @Override
     public String postLoanRepayment(Tenant tenant, String fineractLoanId, LoanRepaymentRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("dateFormat", "dd MMMM yyyy");
@@ -537,6 +665,156 @@ public class HttpFineractGateway implements FineractGateway {
                 text(type.get("value")));
     }
 
+    private RepaymentSchedule toRepaymentSchedule(Map<String, Object> item) {
+        RepaymentScheduleCurrency currency = item.get("currency") instanceof Map<?, ?> currencyMap
+                ? toRepaymentScheduleCurrency((Map<String, Object>) currencyMap)
+                : null;
+        List<RepaymentSchedulePeriod> periods = new ArrayList<>();
+        Object periodsValue = item.get("periods");
+        if (periodsValue instanceof List<?> list) {
+            for (Object entry : list) {
+                if (entry instanceof Map<?, ?> map) {
+                    periods.add(toRepaymentSchedulePeriod((Map<String, Object>) map));
+                }
+            }
+        }
+        return new RepaymentSchedule(
+                currency,
+                integer(item.get("loanTermInDays")),
+                decimal(item.get("totalPrincipalDisbursed")),
+                decimal(item.get("totalPrincipalExpected")),
+                decimal(item.get("totalPrincipalPaid")),
+                decimal(item.get("totalInterestCharged")),
+                decimal(item.get("totalFeeChargesCharged")),
+                decimal(item.get("totalPenaltyChargesCharged")),
+                decimal(item.get("totalWaived")),
+                decimal(item.get("totalWrittenOff")),
+                decimal(item.get("totalRepaymentExpected")),
+                decimal(item.get("totalRepayment")),
+                decimal(item.get("totalPaidInAdvance")),
+                decimal(item.get("totalPaidLate")),
+                decimal(item.get("totalOutstanding")),
+                decimal(item.get("totalCredits")),
+                periods);
+    }
+
+    private RepaymentScheduleCurrency toRepaymentScheduleCurrency(Map<String, Object> item) {
+        return new RepaymentScheduleCurrency(
+                text(item.get("code")),
+                text(item.get("name")),
+                integer(item.get("decimalPlaces")),
+                integer(item.get("inMultiplesOf")),
+                text(item.get("displaySymbol")),
+                text(item.get("nameCode")),
+                text(item.get("displayLabel")));
+    }
+
+    private RepaymentSchedulePeriod toRepaymentSchedulePeriod(Map<String, Object> item) {
+        return new RepaymentSchedulePeriod(
+                integer(item.get("period")),
+                localDate(item.get("fromDate")),
+                localDate(item.get("dueDate")),
+                bool(item.get("complete")),
+                integer(item.get("daysInPeriod")),
+                decimal(item.get("principalDisbursed")),
+                decimal(item.get("principalOriginalDue")),
+                decimal(item.get("principalDue")),
+                decimal(item.get("principalPaid")),
+                decimal(item.get("principalWrittenOff")),
+                decimal(item.get("principalOutstanding")),
+                decimal(item.get("principalLoanBalanceOutstanding")),
+                decimal(item.get("interestOriginalDue")),
+                decimal(item.get("interestDue")),
+                decimal(item.get("interestPaid")),
+                decimal(item.get("interestWaived")),
+                decimal(item.get("interestWrittenOff")),
+                decimal(item.get("interestOutstanding")),
+                decimal(item.get("feeChargesDue")),
+                decimal(item.get("feeChargesPaid")),
+                decimal(item.get("feeChargesWaived")),
+                decimal(item.get("feeChargesWrittenOff")),
+                decimal(item.get("feeChargesOutstanding")),
+                decimal(item.get("penaltyChargesDue")),
+                decimal(item.get("penaltyChargesPaid")),
+                decimal(item.get("penaltyChargesWaived")),
+                decimal(item.get("penaltyChargesWrittenOff")),
+                decimal(item.get("penaltyChargesOutstanding")),
+                decimal(item.get("totalOriginalDueForPeriod")),
+                decimal(item.get("totalDueForPeriod")),
+                decimal(item.get("totalPaidForPeriod")),
+                decimal(item.get("totalPaidInAdvanceForPeriod")),
+                decimal(item.get("totalPaidLateForPeriod")),
+                decimal(item.get("totalWaivedForPeriod")),
+                decimal(item.get("totalWrittenOffForPeriod")),
+                decimal(item.get("totalOutstandingForPeriod")),
+                decimal(item.get("totalOverdue")),
+                decimal(item.get("totalActualCostOfLoanForPeriod")),
+                decimal(item.get("totalInstallmentAmountForPeriod")),
+                decimal(item.get("totalCredits")),
+                decimal(item.get("totalAccruedInterest")),
+                bool(item.get("downPaymentPeriod")));
+    }
+
+    private JournalEntry toJournalEntry(Map<String, Object> item) {
+        Set<String> knownKeys = new HashSet<>(Set.of(
+                "id",
+                "officeId",
+                "officeName",
+                "glAccountName",
+                "glAccountId",
+                "glAccountCode",
+                "glAccountType",
+                "transactionDate",
+                "entryType",
+                "amount",
+                "transactionId",
+                "manualEntry",
+                "entityType",
+                "entityId",
+                "createdByUserId",
+                "createdDate",
+                "createdByUserName",
+                "reversed",
+                "runningBalance"));
+        Map<String, Object> additionalDetails = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : item.entrySet()) {
+            if (!knownKeys.contains(entry.getKey())) {
+                additionalDetails.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return new JournalEntry(
+                longValue(item.get("id")),
+                integer(item.get("officeId")),
+                text(item.get("officeName")),
+                text(item.get("glAccountName")),
+                longValue(item.get("glAccountId")),
+                text(item.get("glAccountCode")),
+                codeValue(item.get("glAccountType")),
+                localDate(item.get("transactionDate")),
+                codeValue(item.get("entryType")),
+                decimal(item.get("amount")),
+                text(item.get("transactionId")),
+                bool(item.get("manualEntry")),
+                codeValue(item.get("entityType")),
+                longValue(item.get("entityId")),
+                longValue(item.get("createdByUserId")),
+                localDate(item.get("createdDate")),
+                text(item.get("createdByUserName")),
+                bool(item.get("reversed")),
+                decimal(item.get("runningBalance")),
+                additionalDetails.isEmpty() ? Map.of() : additionalDetails);
+    }
+
+    private JournalEntryCodeValue codeValue(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        return new JournalEntryCodeValue(
+                integer(map.get("id")),
+                text(map.get("code")),
+                text(map.get("value")));
+    }
+
     private boolean isRepaymentTransaction(Map<String, Object> item) {
         Object typeValue = item.get("type");
         if (typeValue instanceof Map<?, ?> map) {
@@ -592,6 +870,26 @@ public class HttpFineractGateway implements FineractGateway {
         return Integer.parseInt(String.valueOf(value));
     }
 
+    private Long longValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object id = map.get("id");
+            if (id == null) {
+                return null;
+            }
+            if (id instanceof Number number) {
+                return number.longValue();
+            }
+            return Long.parseLong(String.valueOf(id));
+        }
+        return Long.parseLong(String.valueOf(value));
+    }
+
     private String currencyCode(Object value) {
         if (value instanceof Map<?, ?> map) {
             Object code = map.get("code");
@@ -628,6 +926,16 @@ public class HttpFineractGateway implements FineractGateway {
 
     private boolean containsIgnoreCase(String value, String fragment) {
         return value != null && value.toLowerCase().contains(fragment.toLowerCase());
+    }
+
+    private Boolean bool(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
     }
 
     private boolean isApprovedStatus(String statusCode) {

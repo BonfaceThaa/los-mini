@@ -1,5 +1,6 @@
 package com.credvenn.lm.application;
 
+import com.credvenn.lm.common.api.PagedResponse;
 import com.credvenn.lm.fineract.FineractDtos;
 import com.credvenn.lm.security.CurrentActorService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,9 +44,13 @@ public class ApplicationController {
     @GetMapping
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
     @Operation(summary = "List loan applications for the authenticated tenant")
-    public ResponseEntity<List<ApplicationDtos.LoanRequestApplicationResponse>> list() {
+    public ResponseEntity<PagedResponse<ApplicationDtos.LoanRequestApplicationResponse>> list(
+            @RequestParam(defaultValue = "0") Integer page,
+            @RequestParam(defaultValue = "20") Integer size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
         var actor = currentActorService.requireCurrentUser();
-        return ResponseEntity.ok(applicationService.list(actor.tenantId()));
+        return ResponseEntity.ok(applicationService.list(actor.tenantId(), page, size, sortBy, sortDir));
     }
 
     @GetMapping("/{applicationId}")

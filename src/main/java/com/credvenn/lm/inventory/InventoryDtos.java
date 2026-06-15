@@ -39,6 +39,7 @@ public final class InventoryDtos {
             DepositType depositType,
             BigDecimal depositValue,
             InventoryDeviceStatus status,
+            InventoryDeviceLockStatus lockStatus,
             Instant createdAt,
             Instant updatedAt) {
     }
