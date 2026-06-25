@@ -15,12 +15,13 @@ public class ClientRecordService {
     }
 
     @Transactional
-    public void upsertFromFineract(String tenantId, String applicationId, FineractGateway.FineractClient client) {
+    public void upsertFromFineract(String tenantId, String applicationId, String nationalId, FineractGateway.FineractClient client) {
         ClientRecord record = clientRecordRepository.findByTenantIdAndFineractClientId(tenantId, client.id())
                 .orElseGet(ClientRecord::new);
         record.setTenantId(tenantId);
         record.setApplicationId(applicationId);
         record.setFineractClientId(client.id());
+        record.setNationalId(normalizeNationalId(nationalId));
         record.setAccountNo(client.accountNo());
         record.setExternalId(client.externalId());
         record.setStatus(client.status());
@@ -38,5 +39,19 @@ public class ClientRecordService {
     public ClientRecord getRequiredByFineractClientId(String tenantId, String fineractClientId) {
         return clientRecordRepository.findByTenantIdAndFineractClientId(tenantId, fineractClientId)
                 .orElseThrow(() -> new NotFoundException("Client not found"));
+    }
+
+    @Transactional(readOnly = true)
+    public ClientRecord findByTenantIdAndNationalId(String tenantId, String nationalId) {
+        return clientRecordRepository.findByTenantIdAndNationalId(tenantId, normalizeNationalId(nationalId))
+                .orElse(null);
+    }
+
+    private String normalizeNationalId(String nationalId) {
+        if (nationalId == null) {
+            return null;
+        }
+        String trimmed = nationalId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

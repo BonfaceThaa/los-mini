@@ -7,6 +7,8 @@ public interface CladfyGateway {
 
     StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document);
 
+    CladfyDtos.DocumentStatusResponse fetchDocumentStatus(String documentId);
+
     CladfyDtos.AnalysisResultsResponse fetchAnalysisResults(String clientId);
 
     CladfyDtos.CreditScoreResponse fetchCreditScore(String clientId);

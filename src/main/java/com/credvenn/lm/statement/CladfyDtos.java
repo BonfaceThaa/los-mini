@@ -50,7 +50,29 @@ public final class CladfyDtos {
             Long client_id,
             String provider,
             Integer status,
-            String created_at) {
+            String created_at,
+            UploadClient client) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UploadClient(
+            Long id,
+            String full_name,
+            String national_id,
+            UploadScoring scoring) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UploadScoring(
+            Integer score,
+            RiskTier risk_tier,
+            String scored_at,
+            UploadScoringFeatures features) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UploadScoringFeatures(
+            String scored_at) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -58,6 +80,14 @@ public final class CladfyDtos {
             Long document_id,
             Long client_id,
             Long business_id) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record DocumentStatusResponse(
+            Long id,
+            String status,
+            String fail_reason,
+            Boolean password_provided) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

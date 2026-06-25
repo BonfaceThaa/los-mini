@@ -56,4 +56,22 @@ public class TenantController {
             @Valid @RequestBody TenantDtos.UpdateTenantStatusRequest request) {
         return ResponseEntity.ok(tenantService.updateStatus(tenantId, request));
     }
+
+    @PatchMapping("/{tenantId}/kyc-mode")
+    @PreAuthorize("hasAuthority('TENANT_MANAGE_ALL')")
+    @Operation(summary = "Update tenant KYC flow mode")
+    public ResponseEntity<TenantDtos.TenantResponse> updateKycMode(
+            @PathVariable String tenantId,
+            @Valid @RequestBody TenantDtos.UpdateTenantKycModeRequest request) {
+        return ResponseEntity.ok(tenantService.updateKycMode(tenantId, request));
+    }
+
+    @PatchMapping("/{tenantId}/statement-analysis-mode")
+    @PreAuthorize("hasAuthority('TENANT_MANAGE_ALL')")
+    @Operation(summary = "Update tenant statement-analysis flow mode")
+    public ResponseEntity<TenantDtos.TenantResponse> updateStatementAnalysisMode(
+            @PathVariable String tenantId,
+            @Valid @RequestBody TenantDtos.UpdateTenantStatementAnalysisModeRequest request) {
+        return ResponseEntity.ok(tenantService.updateStatementAnalysisMode(tenantId, request));
+    }
 }

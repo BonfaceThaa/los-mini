@@ -7,6 +7,8 @@ import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,24 +20,28 @@ import org.springframework.transaction.annotation.Transactional;
 public class StatementAnalysisProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(StatementAnalysisProcessingService.class);
+    private static final Duration REUSED_UPLOAD_SCORING_MAX_AGE = Duration.ofDays(30);
 
     private final StatementAnalysisRepository statementAnalysisRepository;
     private final StatementProviderRegistry statementProviderRegistry;
     private final ApplicationService applicationService;
     private final DocumentService documentService;
     private final SubscriptionBillingService subscriptionBillingService;
+    private final CladfyStatusPollingService cladfyStatusPollingService;
 
     public StatementAnalysisProcessingService(
             StatementAnalysisRepository statementAnalysisRepository,
             StatementProviderRegistry statementProviderRegistry,
             ApplicationService applicationService,
             DocumentService documentService,
-            SubscriptionBillingService subscriptionBillingService) {
+            SubscriptionBillingService subscriptionBillingService,
+            CladfyStatusPollingService cladfyStatusPollingService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
         this.documentService = documentService;
         this.subscriptionBillingService = subscriptionBillingService;
+        this.cladfyStatusPollingService = cladfyStatusPollingService;
     }
 
     @Async
@@ -72,6 +78,32 @@ public class StatementAnalysisProcessingService {
                 analysis.setExternalBusinessId(submission.externalBusinessId());
                 analysis.setSummary(submission.summary());
                 analysis.setRawProviderResponse(submission.rawProviderResponse());
+                if (provider instanceof CladfyStatementAnalysisProvider cladfyProvider
+                        && isFreshUploadScoring(submission.uploadScoredAt())
+                        && submission.uploadCreditScore() != null
+                        && submission.uploadRiskTier() != null
+                        && !submission.uploadRiskTier().isBlank()) {
+                    var reusedDecision = cladfyProvider.toDecisionFromUploadScoring(
+                            submission.uploadCreditScore(),
+                            submission.uploadRiskTier());
+                    applyDecision(
+                            tenantId,
+                            applicationId,
+                            actor,
+                            analysis,
+                            reusedDecision,
+                            submission.uploadCreditScore(),
+                            submission.uploadRiskTier(),
+                            "UPLOAD_RESPONSE_REUSE");
+                    log.info(
+                            "Completed statement analysis immediately from fresh upload scoring provider={} externalClientId={} externalDocumentId={} scoredAt={}",
+                            submission.provider(),
+                            submission.externalClientId(),
+                            submission.externalDocumentId(),
+                            submission.uploadScoredAt());
+                    return;
+                }
+                cladfyStatusPollingService.scheduleInitialStatusCheck(analysis);
                 log.info(
                         "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={}",
                         submission.provider(),
@@ -92,12 +124,30 @@ public class StatementAnalysisProcessingService {
             String actor,
             StatementAnalysis analysis,
             StatementAnalysisProvider.StatementDecision decision) {
+        applyDecision(tenantId, applicationId, actor, analysis, decision, null, null, "DIRECT");
+    }
+
+    private void applyDecision(
+            String tenantId,
+            String applicationId,
+            String actor,
+            StatementAnalysis analysis,
+            StatementAnalysisProvider.StatementDecision decision,
+            Integer creditScore,
+            String riskTier,
+            String completionSource) {
         analysis.setStatus(decision.status());
         analysis.setAverageMonthlyInflow(decision.averageMonthlyInflow());
         analysis.setAverageMonthlyOutflow(decision.averageMonthlyOutflow());
         analysis.setAffordabilityScore(decision.affordabilityScore());
         analysis.setRecommendation(decision.recommendation());
         analysis.setSummary(decision.summary());
+        analysis.setCreditScore(creditScore);
+        analysis.setRiskTier(riskTier);
+        analysis.setNextStatusCheckAt(null);
+        analysis.setLastStatusCheckAt(Instant.now());
+        analysis.setCompletionSource(completionSource);
+        analysis.setCompletedAt(Instant.now());
         log.info(
                 "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
                 decision.status(),
@@ -150,5 +200,9 @@ public class StatementAnalysisProcessingService {
         }
         String normalized = simulateOutcome.trim().toUpperCase(Locale.ROOT);
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private boolean isFreshUploadScoring(Instant scoredAt) {
+        return scoredAt != null && !scoredAt.isBefore(Instant.now().minus(REUSED_UPLOAD_SCORING_MAX_AGE));
     }
 }

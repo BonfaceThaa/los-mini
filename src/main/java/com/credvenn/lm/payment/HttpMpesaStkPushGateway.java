@@ -7,6 +7,8 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -15,6 +17,7 @@ import org.springframework.web.client.RestClient;
 @Component
 public class HttpMpesaStkPushGateway implements MpesaStkPushGateway {
 
+    private static final Logger log = LoggerFactory.getLogger(HttpMpesaStkPushGateway.class);
     private static final ZoneId MPESA_ZONE = ZoneId.of("Africa/Nairobi");
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
@@ -46,9 +49,12 @@ public class HttpMpesaStkPushGateway implements MpesaStkPushGateway {
         payload.put("CallBackURL", command.config().callbackUrl());
         payload.put("AccountReference", command.billReference());
         payload.put("TransactionDesc", command.transactionDescription());
+        String baseUrl = HttpDarajaAccessTokenGateway.baseUrl(command.config().environment());
+        String url = baseUrl + "/mpesa/stkpush/v1/processrequest";
+        log.info("Daraja STK push request method=POST url={} httpRequestBody={}", url, payload);
 
         Map<?, ?> response = restClientBuilder
-                .baseUrl(HttpDarajaAccessTokenGateway.baseUrl(command.config().environment()))
+                .baseUrl(baseUrl)
                 .build()
                 .post()
                 .uri("/mpesa/stkpush/v1/processrequest")
@@ -60,6 +66,7 @@ public class HttpMpesaStkPushGateway implements MpesaStkPushGateway {
                 .body(payload)
                 .retrieve()
                 .body(Map.class);
+        log.info("Daraja STK push response url={} httpResponseBody={}", url, response);
 
         Object responseCode = response == null ? null : response.get("ResponseCode");
         if (responseCode == null) {

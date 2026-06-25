@@ -1,5 +1,6 @@
 package com.credvenn.lm.devicecontrol;
 
+import com.credvenn.lm.application.ApplicationStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -55,6 +56,19 @@ public final class DeviceControlDtos {
             boolean hasCredentials,
             Instant createdAt,
             Instant updatedAt) {
+    }
+
+    @Schema(name = "TenantDeviceControlConfigStatusResponse")
+    public record TenantDeviceControlConfigStatusResponse(
+            String tenantId,
+            boolean configured,
+            boolean enabled,
+            boolean lockEnabled,
+            boolean unlockEnabled,
+            boolean hasCredentials,
+            String configId,
+            DeviceControlProvider provider,
+            String message) {
     }
 
     @Schema(name = "UpsertNotificationRuleRequest")
@@ -163,6 +177,34 @@ public final class DeviceControlDtos {
             String lastProviderReference,
             Instant createdAt,
             Instant updatedAt) {
+    }
+
+    @Schema(name = "ApplicationAutoLockStateResponse")
+    public record ApplicationAutoLockStateResponse(
+            String applicationId,
+            ApplicationStatus applicationStatus,
+            String fineractLoanId,
+            String assignedDeviceId,
+            String assignedDeviceName,
+            String assignedDeviceImei1,
+            String assignedDeviceImei2,
+            boolean tenantDeviceControlConfigured,
+            boolean tenantDeviceControlEnabled,
+            boolean tenantLockEnabled,
+            boolean loanDeviceControlStateExists,
+            LoanDeviceControlCurrentState currentState,
+            LocalDate nextDueDate,
+            boolean hasOverdueInstallment,
+            Long daysOverdue,
+            boolean autoLockAlreadyQueuedOrActivated,
+            boolean autoLockEligible,
+            List<String> missingRequirements) {
+    }
+
+    @Schema(name = "ReplayAutoLockResponse")
+    public record ReplayAutoLockResponse(
+            String message,
+            ApplicationAutoLockStateResponse state) {
     }
 
     @Schema(name = "DeviceControlActionLogResponse")

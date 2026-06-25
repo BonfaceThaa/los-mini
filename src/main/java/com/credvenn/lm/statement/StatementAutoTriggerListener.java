@@ -1,5 +1,7 @@
 package com.credvenn.lm.statement;
 
+import com.credvenn.lm.tenant.TenantService;
+import com.credvenn.lm.tenant.TenantStatementAnalysisMode;
 import java.util.Locale;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -15,14 +17,34 @@ public class StatementAutoTriggerListener {
 
     private final StatementProviderProperties properties;
     private final StatementAnalysisService statementAnalysisService;
+    private final TenantService tenantService;
 
-    public StatementAutoTriggerListener(StatementProviderProperties properties, StatementAnalysisService statementAnalysisService) {
+    public StatementAutoTriggerListener(
+            StatementProviderProperties properties,
+            StatementAnalysisService statementAnalysisService,
+            TenantService tenantService) {
         this.properties = properties;
         this.statementAnalysisService = statementAnalysisService;
+        this.tenantService = tenantService;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handleDocumentUploaded(StatementDocumentUploadedEvent event) {
+        TenantStatementAnalysisMode mode = tenantService.getRequiredTenant(event.tenantId()).getStatementAnalysisMode();
+        if (mode == TenantStatementAnalysisMode.DISABLED) {
+            log.info(
+                    "Skipping auto-trigger for applicationId={} documentId={} because tenant statementAnalysisMode=DISABLED",
+                    event.applicationId(),
+                    event.documentId());
+            return;
+        }
+        if (mode == TenantStatementAnalysisMode.MANUAL) {
+            log.info(
+                    "Skipping auto-trigger for applicationId={} documentId={} because tenant statementAnalysisMode=MANUAL",
+                    event.applicationId(),
+                    event.documentId());
+            return;
+        }
         Set<String> autoTypes = properties.autoTriggerDocumentTypes().stream()
                 .map(value -> value.toUpperCase(Locale.ROOT))
                 .collect(java.util.stream.Collectors.toSet());

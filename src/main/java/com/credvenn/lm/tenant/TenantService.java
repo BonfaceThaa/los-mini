@@ -41,6 +41,10 @@ public class TenantService {
         tenant.setName(request.name().trim());
         tenant.setFineractTenantId(request.fineractTenantId().trim());
         tenant.setActive(true);
+        tenant.setKycMode(request.kycMode() == null ? TenantKycMode.AUTO : request.kycMode());
+        tenant.setStatementAnalysisMode(request.statementAnalysisMode() == null
+                ? TenantStatementAnalysisMode.AUTO
+                : request.statementAnalysisMode());
         tenant = tenantRepository.save(tenant);
 
         roleTemplateService.provisionTenantRoles(tenant.getId());
@@ -74,6 +78,22 @@ public class TenantService {
         return toResponse(tenant);
     }
 
+    @Transactional
+    public TenantDtos.TenantResponse updateKycMode(String tenantId, TenantDtos.UpdateTenantKycModeRequest request) {
+        Tenant tenant = getRequiredTenant(tenantId);
+        tenant.setKycMode(request.kycMode());
+        return toResponse(tenant);
+    }
+
+    @Transactional
+    public TenantDtos.TenantResponse updateStatementAnalysisMode(
+            String tenantId,
+            TenantDtos.UpdateTenantStatementAnalysisModeRequest request) {
+        Tenant tenant = getRequiredTenant(tenantId);
+        tenant.setStatementAnalysisMode(request.statementAnalysisMode());
+        return toResponse(tenant);
+    }
+
     @Transactional(readOnly = true)
     public Tenant requireActiveTenantByCode(String code) {
         Tenant tenant = tenantRepository.findByCodeIgnoreCase(code)
@@ -95,6 +115,8 @@ public class TenantService {
                 tenant.getName(),
                 tenant.getFineractTenantId(),
                 tenant.isActive(),
+                tenant.getKycMode(),
+                tenant.getStatementAnalysisMode(),
                 tenant.getCreatedAt(),
                 tenant.getUpdatedAt());
     }

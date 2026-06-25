@@ -1,0 +1,2 @@
+ALTER TABLE tenants
+    ADD COLUMN kyc_mode VARCHAR(20) NOT NULL DEFAULT 'AUTO' AFTER active;

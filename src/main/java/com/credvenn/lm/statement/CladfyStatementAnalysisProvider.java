@@ -57,6 +57,24 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
                 summary);
     }
 
+    public StatementDecision toDecisionFromUploadScoring(Integer score, String riskTier) {
+        StatementAnalysisStatus status = mapTierToStatus(riskTier);
+        String recommendation = switch (status) {
+            case PASSED -> "APPROVE";
+            case MANUAL_REVIEW_REQUIRED -> "REVIEW";
+            case FAILED -> "DECLINE";
+            default -> "REVIEW";
+        };
+        String summary = "Cladfy reused existing scoring score=%s riskTier=%s".formatted(score, riskTier);
+        return new StatementDecision(
+                status,
+                null,
+                null,
+                score == null ? null : BigDecimal.valueOf(score),
+                recommendation,
+                summary);
+    }
+
     private StatementAnalysisStatus mapTierToStatus(String tier) {
         if (tier == null) {
             return StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED;

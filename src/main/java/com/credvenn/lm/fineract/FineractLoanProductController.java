@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,5 +54,14 @@ public class FineractLoanProductController {
     @Operation(summary = "Get a tenant loan product mapping by product code")
     public ResponseEntity<LoanProductCatalogDtos.LoanProductCatalogResponse> getLoanProduct(@PathVariable String productCode) {
         return ResponseEntity.ok(loanProductCatalogService.getCurrentTenantProduct(productCode));
+    }
+
+    @PatchMapping("/{shortName}")
+    @PreAuthorize("hasAuthority('LOAN_PRODUCT_UPDATE')")
+    @Operation(summary = "Update a tenant loan product in Mini-LOS and Fineract by short name")
+    public ResponseEntity<LoanProductCatalogDtos.LoanProductCatalogResponse> updateLoanProduct(
+            @PathVariable String shortName,
+            @Valid @RequestBody LoanProductCatalogDtos.UpdateLoanProductRequest request) {
+        return ResponseEntity.ok(loanProductCatalogService.updateCurrentTenantProductByShortName(shortName, request));
     }
 }

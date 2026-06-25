@@ -7,5 +7,8 @@ public record StatementAnalysisSubmission(
         String externalDocumentId,
         String externalBusinessId,
         String summary,
-        String rawProviderResponse) {
+        String rawProviderResponse,
+        Integer uploadCreditScore,
+        String uploadRiskTier,
+        java.time.Instant uploadScoredAt) {
 }

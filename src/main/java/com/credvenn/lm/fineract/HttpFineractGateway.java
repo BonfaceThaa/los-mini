@@ -187,6 +187,60 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     @Override
+    public void updateLoanProduct(Tenant tenant, String fineractProductId, UpdateLoanProductRequest request) {
+        log.info("Updating Fineract loan product fineractProductId={} name={} currencyCode={} numberOfRepayments={}",
+                fineractProductId,
+                request.name(),
+                request.currencyCode(),
+                request.numberOfRepayments());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", request.name());
+        payload.put("shortName", request.shortName());
+        if (request.description() != null) {
+            payload.put("description", request.description());
+        }
+        payload.put("currencyCode", request.currencyCode());
+        payload.put("digitsAfterDecimal", 2);
+        payload.put("inMultiplesOf", 1);
+        payload.put("principal", request.principal());
+        payload.put("minPrincipal", request.minPrincipal());
+        payload.put("maxPrincipal", request.maxPrincipal());
+        payload.put("numberOfRepayments", request.numberOfRepayments());
+        payload.put("minNumberOfRepayments", request.numberOfRepayments());
+        payload.put("maxNumberOfRepayments", request.numberOfRepayments());
+        payload.put("repaymentEvery", request.repaymentEvery());
+        payload.put("repaymentFrequencyType", request.repaymentFrequencyType());
+        payload.put("interestRatePerPeriod", request.interestRatePerPeriod());
+        payload.put("interestRateFrequencyType", request.interestRateFrequencyType());
+        payload.put("amortizationType", request.amortizationType());
+        payload.put("interestType", request.interestType());
+        payload.put("interestCalculationPeriodType", request.interestCalculationPeriodType());
+        payload.put("transactionProcessingStrategyCode",
+                request.transactionProcessingStrategyCode() == null || request.transactionProcessingStrategyCode().isBlank()
+                        ? properties.transactionProcessingStrategyCode()
+                        : request.transactionProcessingStrategyCode());
+        payload.put("dateFormat", properties.dateFormat());
+        payload.put("locale", properties.locale());
+        payload.put("isInterestRecalculationEnabled", false);
+        payload.put("daysInMonthType", 1);
+        payload.put("daysInYearType", 1);
+        if (request.loanPortfolioAccountId() != null) {
+            payload.put("accountingRule", 2);
+            payload.put("loanPortfolioAccountId", request.loanPortfolioAccountId());
+            payload.put("fundSourceAccountId", request.fundSourceAccountId());
+            payload.put("interestOnLoanAccountId", request.interestOnLoanAccountId());
+            payload.put("incomeFromFeeAccountId", request.incomeFromFeeAccountId());
+            payload.put("incomeFromPenaltyAccountId", request.incomeFromPenaltyAccountId());
+            payload.put("incomeFromRecoveryAccountId", request.incomeFromRecoveryAccountId());
+            payload.put("writeOffAccountId", request.writeOffAccountId());
+            payload.put("transfersInSuspenseAccountId", request.transfersInSuspenseAccountId());
+            payload.put("overpaymentLiabilityAccountId", request.overpaymentLiabilityAccountId());
+        }
+        put("/loanproducts/%s".formatted(fineractProductId), tenant, payload);
+        log.info("Updated Fineract loan product fineractProductId={}", fineractProductId);
+    }
+
+    @Override
     public CreatedGlAccount createGlAccount(Tenant tenant, CreateGlAccountRequest request) {
         log.info("Creating Fineract GL account name={} glCode={} type={} usage={}",
                 request.name(),
@@ -407,7 +461,10 @@ public class HttpFineractGateway implements FineractGateway {
                         || Boolean.TRUE.equals(period.get("fullyPaid"))
                         || (outstandingAmount != null && outstandingAmount.compareTo(BigDecimal.ZERO) <= 0);
                 boolean overdue = !fullyPaid && dueDate.isBefore(today);
-                if (!fullyPaid && nextDueDate == null && !dueDate.isBefore(today)) {
+                if (!fullyPaid
+                        && nextDueDate == null
+                        && !dueDate.isBefore(today)
+                        && hasMeaningfulAmountDue(dueAmount, outstandingAmount)) {
                     nextDueDate = dueDate;
                 }
                 if (overdue && (oldestOverdueDate == null || dueDate.isBefore(oldestOverdueDate))) {
@@ -555,6 +612,16 @@ public class HttpFineractGateway implements FineractGateway {
                 .body(payload)
                 .retrieve()
                 .body(Map.class);
+    }
+
+    private Object put(String path, Tenant tenant, Map<String, Object> payload) {
+        return restClient.put()
+                .uri(path)
+                .headers(headers -> applyHeaders(headers, tenant))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(Object.class);
     }
 
     private List<Map<String, Object>> extractItems(Object response, String... keys) {
@@ -839,6 +906,16 @@ public class HttpFineractGateway implements FineractGateway {
 
     private BigDecimal decimal(Object value) {
         return value == null ? null : new BigDecimal(String.valueOf(value));
+    }
+
+    private boolean hasMeaningfulAmountDue(BigDecimal dueAmount, BigDecimal outstandingAmount) {
+        if (outstandingAmount != null) {
+            return outstandingAmount.compareTo(BigDecimal.ZERO) > 0;
+        }
+        if (dueAmount != null) {
+            return dueAmount.compareTo(BigDecimal.ZERO) > 0;
+        }
+        return false;
     }
 
     private Object firstNonNull(Object... values) {

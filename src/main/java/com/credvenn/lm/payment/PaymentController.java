@@ -187,7 +187,7 @@ public class PaymentController {
         return ResponseEntity.ok(new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted"));
     }
 
-    @PostMapping("/api/v1/public/tenants/{tenantId}/payments/mpesa/deposits/callback")
+    @PostMapping("/api/v1/public/tenants/{tenantId}/collections/c2b/deposits/callback")
     @Tag(name = "Payments")
     @Operation(summary = "Receive tenant-specific Daraja deposit confirmations for pre-loan deposits")
     public ResponseEntity<PaymentDtos.DarajaCallbackAcknowledgement> tenantDepositCallback(
@@ -195,6 +195,21 @@ public class PaymentController {
             @Valid @RequestBody PaymentDtos.DarajaCallbackRequest request) {
         handleDepositCallback(tenantId, request);
         return ResponseEntity.ok(new PaymentDtos.DarajaCallbackAcknowledgement(0, "Accepted"));
+    }
+
+    @PostMapping("/api/v1/public/tenants/{tenantId}/collections/c2b/deposits/validate")
+    @Tag(name = "Payments")
+    @Operation(summary = "Validate whether a tenant deposit payment should be accepted before confirmation")
+    public ResponseEntity<PaymentDtos.DarajaValidationResponse> validateTenantDepositCallback(
+            @PathVariable String tenantId,
+            @Valid @RequestBody PaymentDtos.DarajaCallbackRequest request) {
+        var decision = depositPaymentService.validateDepositCallback(
+                tenantId,
+                request.BusinessShortCode(),
+                request.BillRefNumber());
+        return ResponseEntity.ok(new PaymentDtos.DarajaValidationResponse(
+                decision.resultCode(),
+                decision.resultDesc()));
     }
 
     @PostMapping("/api/v1/public/tenants/{tenantId}/payments/mpesa/stk/callback")

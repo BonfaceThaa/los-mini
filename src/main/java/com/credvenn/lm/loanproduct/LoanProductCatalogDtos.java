@@ -31,10 +31,32 @@ public final class LoanProductCatalogDtos {
             @NotNull Boolean active) {
     }
 
+    @Schema(name = "UpdateLoanProductRequest")
+    public record UpdateLoanProductRequest(
+            @Size(max = 255) String displayName,
+            @Size(max = 4) String shortName,
+            String description,
+            @Size(max = 10) String currencyCode,
+            @Valid PrincipalPatchRequest principal,
+            @Valid TermPatchRequest term,
+            @Valid InterestPatchRequest interest,
+            String amortizationType,
+            String transactionProcessingStrategyCode,
+            @Size(max = 100) String accountingTemplateCode,
+            @Valid AccountingAccountsRequest accountingAccounts,
+            Boolean active) {
+    }
+
     public record PrincipalRequest(
             @NotNull @DecimalMin(value = "0.01") BigDecimal min,
             @NotNull @DecimalMin(value = "0.01") BigDecimal defaultAmount,
             @NotNull @DecimalMin(value = "0.01") BigDecimal max) {
+    }
+
+    public record PrincipalPatchRequest(
+            @DecimalMin(value = "0.01") BigDecimal min,
+            @DecimalMin(value = "0.01") BigDecimal defaultAmount,
+            @DecimalMin(value = "0.01") BigDecimal max) {
     }
 
     public record TermRequest(
@@ -43,11 +65,24 @@ public final class LoanProductCatalogDtos {
             @NotBlank String repaymentFrequency) {
     }
 
+    public record TermPatchRequest(
+            Integer numberOfRepayments,
+            Integer repaymentEvery,
+            String repaymentFrequency) {
+    }
+
     public record InterestRequest(
             @NotNull @DecimalMin(value = "0.0") BigDecimal ratePerPeriod,
             @NotBlank String interestType,
             @NotBlank String calculationPeriodType,
             @NotBlank String rateFrequency) {
+    }
+
+    public record InterestPatchRequest(
+            @DecimalMin(value = "0.0") BigDecimal ratePerPeriod,
+            String interestType,
+            String calculationPeriodType,
+            String rateFrequency) {
     }
 
     public record AccountingAccountsRequest(

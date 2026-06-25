@@ -6,7 +6,11 @@ import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.core.io.Resource;
@@ -75,16 +79,19 @@ public class HttpCladfyGateway implements CladfyGateway {
             body.add("provider", providerCode);
             body.add("webhook", buildWebhookUrl());
             body.add("national_id", application.getNationalId());
+            if (application.getStatementOtp() != null && !application.getStatementOtp().isBlank()) {
+                body.add("password", application.getStatementOtp());
+            }
 
             CladfyDtos.DocumentUploadResponse upload = logAndParseBody(
                     "Cladfy document upload",
                     HttpMethod.POST,
                     "/documents",
-                    cladfyRestClient.post()
-                    .uri("/documents")
-                    .headers(this::applyApiKey)
-                    .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .body(body),
+                    requestPath -> cladfyRestClient.post()
+                            .uri(requestPath)
+                            .headers(this::applyApiKey)
+                            .contentType(MediaType.MULTIPART_FORM_DATA)
+                            .body(body),
                     CladfyDtos.DocumentUploadResponse.class);
             log.info(
                     "Cladfy document upload response clientId={} documentId={} status={} provider={}",
@@ -102,10 +109,34 @@ public class HttpCladfyGateway implements CladfyGateway {
                     String.valueOf(upload.id()),
                     null,
                     "Statement submitted to Cladfy for analysis",
-                    upload.toString());
+                    upload.toString(),
+                    upload.client() == null || upload.client().scoring() == null ? null : upload.client().scoring().score(),
+                    upload.client() == null || upload.client().scoring() == null || upload.client().scoring().risk_tier() == null
+                            ? null
+                            : upload.client().scoring().risk_tier().tier(),
+                    resolveUploadScoredAt(upload));
         } catch (IOException ex) {
             throw new BadRequestException("Unable to read stored statement document");
         }
+    }
+
+    @Override
+    public CladfyDtos.DocumentStatusResponse fetchDocumentStatus(String documentId) {
+        CladfyDtos.DocumentStatusResponse response = logAndParseBody(
+                "Cladfy document status",
+                HttpMethod.GET,
+                "/documents/{documentId}/status",
+                requestPath -> cladfyRestClient.get()
+                        .uri(requestPath, documentId)
+                        .headers(this::applyApiKey),
+                CladfyDtos.DocumentStatusResponse.class);
+        log.info(
+                "Cladfy document status response documentId={} status={} failReason={} passwordProvided={}",
+                documentId,
+                response == null ? null : response.status(),
+                response == null ? null : response.fail_reason(),
+                response == null ? null : response.password_provided());
+        return response;
     }
 
     @Override
@@ -113,13 +144,13 @@ public class HttpCladfyGateway implements CladfyGateway {
         CladfyDtos.AnalysisResultsResponse response = logAndParseBody(
                 "Cladfy analysis results",
                 HttpMethod.GET,
-                "/clients/analysis_results/",
-                cladfyRestClient.get()
-                .uri("/clients/analysis_results/")
-                .headers(headers -> {
-                    applyApiKey(headers);
-                    headers.set("X-Client-Id", clientId);
-                }),
+                "/clients/analysis_results",
+                requestPath -> cladfyRestClient.get()
+                        .uri(requestPath)
+                        .headers(headers -> {
+                            applyApiKey(headers);
+                            headers.set("X-Client-Id", clientId);
+                        }),
                 CladfyDtos.AnalysisResultsResponse.class);
         log.info(
                 "Cladfy analysis results response clientId={} documentId={} transactionCount={} totalIn={} totalOut={}",
@@ -136,10 +167,10 @@ public class HttpCladfyGateway implements CladfyGateway {
         CladfyDtos.CreditScoreResponse response = logAndParseBody(
                 "Cladfy credit score",
                 HttpMethod.GET,
-                "/clients/{clientId}/scoring/",
-                cladfyRestClient.get()
-                .uri("/clients/{clientId}/scoring/", clientId)
-                .headers(this::applyApiKey),
+                "/clients/{clientId}/scoring",
+                requestPath -> cladfyRestClient.get()
+                        .uri(requestPath, clientId)
+                        .headers(this::applyApiKey),
                 CladfyDtos.CreditScoreResponse.class);
         log.info(
                 "Cladfy credit score response clientId={} score={} riskTier={} scoredAt={}",
@@ -179,16 +210,16 @@ public class HttpCladfyGateway implements CladfyGateway {
             CladfyDtos.ClientResponse response = logAndParseBody(
                     "Cladfy create client",
                     HttpMethod.POST,
-                    "/clients/",
-                    cladfyRestClient.post()
-                    .uri("/clients/")
-                    .headers(this::applyApiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(new CladfyDtos.CreateClientRequest(
-                            application.getApplicantFirstName(),
-                            application.getApplicantLastName(),
-                            application.getPhoneNumber(),
-                            application.getNationalId())),
+                    "/clients",
+                    requestPath -> cladfyRestClient.post()
+                            .uri(requestPath)
+                            .headers(this::applyApiKey)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(new CladfyDtos.CreateClientRequest(
+                                    application.getApplicantFirstName(),
+                                    application.getApplicantLastName(),
+                                    application.getPhoneNumber(),
+                                    application.getNationalId())),
                     CladfyDtos.ClientResponse.class);
             log.info(
                     "Cladfy create client response clientId={} fullName={} phoneNumber={}",
@@ -237,10 +268,20 @@ public class HttpCladfyGateway implements CladfyGateway {
             String operation,
             HttpMethod method,
             String path,
-            RestClient.RequestHeadersSpec<?> requestSpec,
+            Function<String, RestClient.RequestHeadersSpec<?>> requestFactory,
             Class<T> responseType) {
+        return executeRequest(operation, method, path, requestFactory, responseType, true);
+    }
+
+    private <T> T executeRequest(
+            String operation,
+            HttpMethod method,
+            String path,
+            Function<String, RestClient.RequestHeadersSpec<?>> requestFactory,
+            Class<T> responseType,
+            boolean allowTrailingSlashRetry) {
         try {
-            ResponseEntity<String> response = requestSpec.retrieve().toEntity(String.class);
+            ResponseEntity<String> response = requestFactory.apply(path).retrieve().toEntity(String.class);
             String body = response.getBody();
             HttpStatusCode statusCode = response.getStatusCode();
             String location = response.getHeaders().getFirst(HttpHeaders.LOCATION);
@@ -253,6 +294,16 @@ public class HttpCladfyGateway implements CladfyGateway {
                         statusCode.value(),
                         location,
                         body);
+                if (allowTrailingSlashRetry && shouldRetryWithTrailingSlash(path, location)) {
+                    String retryPath = path + "/";
+                    log.info(
+                            "{} retrying with trailing slash method={} originalPath={} retryPath={}",
+                            operation,
+                            method.name(),
+                            path,
+                            retryPath);
+                    return executeRequest(operation, method, retryPath, requestFactory, responseType, false);
+                }
                 throw new BadRequestException(
                         operation + " returned redirect status "
                                 + statusCode.value()
@@ -279,5 +330,47 @@ public class HttpCladfyGateway implements CladfyGateway {
         } catch (IOException ex) {
             throw new BadRequestException(operation + " response could not be parsed");
         }
+    }
+
+    private boolean shouldRetryWithTrailingSlash(String path, String location) {
+        if (path == null || path.isBlank() || path.endsWith("/")) {
+            return false;
+        }
+        if (location == null || location.isBlank()) {
+            return true;
+        }
+        return location.endsWith(path + "/");
+    }
+
+    private Instant resolveUploadScoredAt(CladfyDtos.DocumentUploadResponse upload) {
+        if (upload == null || upload.client() == null || upload.client().scoring() == null) {
+            return null;
+        }
+        CladfyDtos.UploadScoring scoring = upload.client().scoring();
+        Instant direct = parseInstant(scoring.scored_at());
+        if (direct != null) {
+            return direct;
+        }
+        return scoring.features() == null ? null : parseInstant(scoring.features().scored_at());
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            return Instant.parse(trimmed);
+        } catch (Exception ignored) {
+        }
+        try {
+            return java.time.OffsetDateTime.parse(trimmed).toInstant();
+        } catch (Exception ignored) {
+        }
+        try {
+            return LocalDateTime.parse(trimmed).toInstant(ZoneOffset.UTC);
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 }

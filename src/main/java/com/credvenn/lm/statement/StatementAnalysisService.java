@@ -17,16 +17,19 @@ public class StatementAnalysisService {
 
     private final StatementAnalysisRepository statementAnalysisRepository;
     private final StatementAnalysisProcessingService processingService;
+    private final StatementProviderRegistry statementProviderRegistry;
     private final ApplicationService applicationService;
     private final DocumentService documentService;
 
     public StatementAnalysisService(
             StatementAnalysisRepository statementAnalysisRepository,
             StatementAnalysisProcessingService processingService,
+            StatementProviderRegistry statementProviderRegistry,
             ApplicationService applicationService,
             DocumentService documentService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.processingService = processingService;
+        this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
         this.documentService = documentService;
     }
@@ -39,10 +42,13 @@ public class StatementAnalysisService {
             String actor,
             String simulateOutcome) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            applicationService.getRequired(tenantId, applicationId);
+            var application = applicationService.getRequired(tenantId, applicationId);
             var document = documentService.getRequired(tenantId, documentId);
             if (!document.getApplicationId().equals(applicationId)) {
                 throw new NotFoundException("Document does not belong to the loan request application");
+            }
+            if (requiresStatementOtp() && (application.getStatementOtp() == null || application.getStatementOtp().isBlank())) {
+                throw new BadRequestException("Statement OTP is required before submitting the statement to the configured provider");
             }
             if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, java.util.Set.of(
                     StatementAnalysisStatus.PENDING,
@@ -137,5 +143,9 @@ public class StatementAnalysisService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? defaultValue : trimmed;
+    }
+
+    private boolean requiresStatementOtp() {
+        return "CLADFY".equalsIgnoreCase(statementProviderRegistry.currentProvider().providerCode());
     }
 }

@@ -1,5 +1,6 @@
 package com.credvenn.lm.kyc;
 
+import com.credvenn.lm.application.ApplicationDtos;
 import com.credvenn.lm.security.CurrentActorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -46,7 +47,7 @@ public class KycController {
 
     @PostMapping("/manual-review")
     @PreAuthorize("hasAuthority('KYC_MANUAL_REVIEW')")
-    @Operation(summary = "Manually approve or reject a failed/review-required KYC")
+    @Operation(summary = "Manually approve or reject a pending, in-progress, failed, or review-required KYC")
     public ResponseEntity<KycDtos.KycCheckResponse> manualReview(
             @PathVariable String applicationId,
             @Valid @RequestBody KycDtos.ManualKycReviewRequest request) {
@@ -60,5 +61,13 @@ public class KycController {
     public ResponseEntity<KycDtos.KycCheckResponse> retry(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(kycService.retry(actor.tenantId(), applicationId, actor.username()));
+    }
+
+    @PostMapping("/retry-client-creation")
+    @PreAuthorize("hasAuthority('KYC_RUN')")
+    @Operation(summary = "Retry Fineract client creation after KYC approval")
+    public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> retryClientCreation(@PathVariable String applicationId) {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.ok(kycService.retryClientCreation(actor.tenantId(), applicationId, actor.username()));
     }
 }

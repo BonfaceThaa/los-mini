@@ -72,11 +72,12 @@ app:
       refresh-token-expiration-seconds: 1209600
   integration:
     kyc:
-      provider: SIMULATED
+      provider: SMILE_ID
       smile-id:
-        base-url: https://testapi.smileidentity.com
-        partner-id: CHANGE_ME
-        api-key: CHANGE_ME
+        base-url: https://api.smileidentity.com
+        partner-id: "8763"
+        api-key: 12f02081-60ab-478b-93e5-0a9233945414
+        signature-api-key: 12f02081-60ab-478b-93e5-0a9233945414
         source-sdk-version: 1.0.0
     statement:
       provider: CLADFY

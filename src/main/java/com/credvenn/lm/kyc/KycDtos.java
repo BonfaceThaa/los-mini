@@ -16,6 +16,19 @@ public final class KycDtos {
             @NotBlank @Size(max = 1000) String reason) {
     }
 
+    @Schema(name = "KycActionResponse")
+    public record KycActionResponse(
+            String names,
+            String firstName,
+            String lastName,
+            String otherNames,
+            String dob,
+            String gender,
+            String phoneNumber,
+            String verifyIdNumber,
+            String idVerification) {
+    }
+
     @Schema(name = "KycCheckResponse")
     public record KycCheckResponse(
             String id,
@@ -24,6 +37,7 @@ public final class KycDtos {
             KycStatus status,
             String providerReference,
             String summary,
+            KycActionResponse actions,
             String reviewedBy,
             String reviewReason,
             Instant reviewedAt,

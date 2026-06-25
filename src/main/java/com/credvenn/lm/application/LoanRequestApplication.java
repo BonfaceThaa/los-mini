@@ -11,6 +11,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -27,6 +28,9 @@ public class LoanRequestApplication extends AuditableEntity {
     @Column(name = "applicant_first_name", nullable = false)
     private String applicantFirstName;
 
+    @Column(name = "applicant_middle_name")
+    private String applicantMiddleName;
+
     @Column(name = "applicant_last_name", nullable = false)
     private String applicantLastName;
 
@@ -35,6 +39,19 @@ public class LoanRequestApplication extends AuditableEntity {
 
     @Column(name = "national_id", nullable = false, length = 100)
     private String nationalId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "applicant_id_type", nullable = false, length = 30)
+    private ApplicantIdType applicantIdType;
+
+    @Column(name = "dob")
+    private LocalDate dob;
+
+    @Column(name = "gender", length = 50)
+    private String gender;
+
+    @Column(name = "statement_otp", length = 100)
+    private String statementOtp;
 
     @Column(name = "requested_amount", nullable = false, precision = 19, scale = 2)
     private BigDecimal requestedAmount;
@@ -146,12 +163,22 @@ public class LoanRequestApplication extends AuditableEntity {
     public void setTenantId(String tenantId) { this.tenantId = tenantId; }
     public String getApplicantFirstName() { return applicantFirstName; }
     public void setApplicantFirstName(String applicantFirstName) { this.applicantFirstName = applicantFirstName; }
+    public String getApplicantMiddleName() { return applicantMiddleName; }
+    public void setApplicantMiddleName(String applicantMiddleName) { this.applicantMiddleName = applicantMiddleName; }
     public String getApplicantLastName() { return applicantLastName; }
     public void setApplicantLastName(String applicantLastName) { this.applicantLastName = applicantLastName; }
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
     public String getNationalId() { return nationalId; }
     public void setNationalId(String nationalId) { this.nationalId = nationalId; }
+    public ApplicantIdType getApplicantIdType() { return applicantIdType; }
+    public void setApplicantIdType(ApplicantIdType applicantIdType) { this.applicantIdType = applicantIdType; }
+    public LocalDate getDob() { return dob; }
+    public void setDob(LocalDate dob) { this.dob = dob; }
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+    public String getStatementOtp() { return statementOtp; }
+    public void setStatementOtp(String statementOtp) { this.statementOtp = statementOtp; }
     public BigDecimal getRequestedAmount() { return requestedAmount; }
     public void setRequestedAmount(BigDecimal requestedAmount) { this.requestedAmount = requestedAmount; }
     public Integer getRequestedTermMonths() { return requestedTermMonths; }

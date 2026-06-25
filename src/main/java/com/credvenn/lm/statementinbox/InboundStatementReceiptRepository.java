@@ -7,6 +7,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface InboundStatementReceiptRepository extends JpaRepository<InboundStatementReceipt, String> {
 
+    List<InboundStatementReceipt> findAllByTenantIdAndExtractedPhoneTokenAndMatchStatusInOrderByCreatedAtAsc(
+            String tenantId,
+            String extractedPhoneToken,
+            Collection<InboundStatementMatchStatus> statuses);
+
     List<InboundStatementReceipt> findAllByTenantIdAndMatchStatusInOrderByCreatedAtDesc(
             String tenantId,
             Collection<InboundStatementMatchStatus> statuses);

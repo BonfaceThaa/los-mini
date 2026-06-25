@@ -39,16 +39,14 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
 
     @Override
     public List<ProviderCatalogItem> fetchNotifications(RuntimeConfig config) {
-
-        log.info("DatacultrDeviceControlGateway-fetchNotifications ...");
-        log.info(config.toString());
+        String url = absoluteUrl(config, "/v2/lifecycle/dem_%s/get_all_notifications/".formatted(config.clientCode()));
+        log.info("Datacultr fetch notifications request method=GET url={} httpRequestBody=null", url);
         Object response = client(config).get()
                 .uri("/v2/lifecycle/dem_{client}/get_all_notifications/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
                 .retrieve()
                 .body(Object.class);
-        log.info("reponse ...");
-        log.info(response.toString());
+        log.info("Datacultr fetch notifications response url={} httpResponseBody={}", url, stringify(response));
         if (!(response instanceof Map<?, ?> map) || !(map.get("notifications") instanceof List<?> notifications)) {
             return List.of();
         }
@@ -63,11 +61,14 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
 
     @Override
     public List<ProviderCatalogItem> fetchNudges(RuntimeConfig config) {
+        String url = absoluteUrl(config, "/v2/lifecycle/dem_%s/get_nudges/".formatted(config.clientCode()));
+        log.info("Datacultr fetch nudges request method=GET url={} httpRequestBody=null", url);
         Object response = client(config).get()
                 .uri("/v2/lifecycle/dem_{client}/get_nudges/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr fetch nudges response url={} httpResponseBody={}", url, stringify(response));
         if (!(response instanceof Map<?, ?> map) || !(map.get("nudges") instanceof List<?> nudges)) {
             return List.of();
         }
@@ -84,6 +85,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
     public BulkActionResult lock(RuntimeConfig config, String transactionId, List<BulkActionItem> items) {
         String csv = buildBulkCsv(items, true);
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DC_LOCK_%s_REQ.csv".formatted(timestamp()));
+        String url = absoluteUrl(config, "/v3/lifecycle/dem_%s/bulkapplylock/".formatted(config.clientCode()));
+        log.info("Datacultr bulk lock request method=PUT url={} httpRequestBody={}", url, stringify(form));
         Object response = client(config).put()
                 .uri("/v3/lifecycle/dem_{client}/bulkapplylock/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -91,6 +94,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(form)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr bulk lock response url={} httpResponseBody={}", url, stringify(response));
         return new BulkActionResult(transactionId, csv, stringify(response));
     }
 
@@ -99,6 +103,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         String csv = buildNotificationCsv(items);
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCNOTIF_%s_REQ.csv".formatted(timestamp()));
         form.add("code", notificationCode);
+        String url = absoluteUrl(config, "/v3/lifecycle/dem_%s/bulk_custom_notification/".formatted(config.clientCode()));
+        log.info("Datacultr bulk notification request method=POST url={} httpRequestBody={}", url, stringify(form));
         Object response = client(config).post()
                 .uri("/v3/lifecycle/dem_{client}/bulk_custom_notification/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -106,6 +112,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(form)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr bulk notification response url={} httpResponseBody={}", url, stringify(response));
         return new BulkActionResult(transactionId, csv, stringify(response));
     }
 
@@ -113,6 +120,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
     public BulkActionResult sendNudge(RuntimeConfig config, String transactionId, List<BulkActionItem> items) {
         String csv = buildBulkCsv(items, false);
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCNOTIF_%s_REQ.csv".formatted(timestamp()));
+        String url = absoluteUrl(config, "/v3/lifecycle/dem_%s/bulkapplynudge/".formatted(config.clientCode()));
+        log.info("Datacultr bulk nudge request method=PUT url={} httpRequestBody={}", url, stringify(form));
         Object response = client(config).put()
                 .uri("/v3/lifecycle/dem_{client}/bulkapplynudge/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -120,6 +129,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(form)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr bulk nudge response url={} httpResponseBody={}", url, stringify(response));
         return new BulkActionResult(transactionId, csv, stringify(response));
     }
 
@@ -127,6 +137,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
     public BulkActionResult bulkUnlock(RuntimeConfig config, String transactionId, List<BulkActionItem> items) {
         String csv = buildBulkUnlockCsv(items);
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCUNLOCK_%s_REQ.csv".formatted(timestamp()));
+        String url = absoluteUrl(config, "/v3/lifecycle/dem_%s/bulkapplyunlock/".formatted(config.clientCode()));
+        log.info("Datacultr bulk unlock request method=PUT url={} httpRequestBody={}", url, stringify(form));
         Object response = client(config).put()
                 .uri("/v3/lifecycle/dem_{client}/bulkapplyunlock/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -134,6 +146,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(form)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr bulk unlock response url={} httpResponseBody={}", url, stringify(response));
         return new BulkActionResult(transactionId, csv, stringify(response));
     }
 
@@ -141,6 +154,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
     public BulkActionResult activateAutoLock(RuntimeConfig config, String transactionId, List<AutoLockItem> items) {
         String csv = buildAutoLockCsv(items);
         MultiValueMap<String, Object> form = baseBulkForm(transactionId, csv, "DCAUTOLOCK_%s_REQ.csv".formatted(timestamp()));
+        String url = absoluteUrl(config, "/v3/dem_%s/auto_lock_activate/".formatted(config.clientCode()));
+        log.info("Datacultr auto lock request method=PUT url={} httpRequestBody={}", url, stringify(form));
         Object response = client(config).put()
                 .uri("/v3/dem_{client}/auto_lock_activate/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -148,6 +163,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(form)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr auto lock response url={} httpResponseBody={}", url, stringify(response));
         return new BulkActionResult(transactionId, csv, stringify(response));
     }
 
@@ -156,6 +172,8 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
         Map<String, Object> payload = Map.of(
                 "imei1", imei1,
                 "TriggerID", triggerId);
+        String url = absoluteUrl(config, "/v3/lifecycle/dem_%s/applyunlock/".formatted(config.clientCode()));
+        log.info("Datacultr unlock request method=POST url={} httpRequestBody={}", url, stringify(payload));
         Object response = client(config).post()
                 .uri("/v3/lifecycle/dem_{client}/applyunlock/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -163,12 +181,15 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(payload)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr unlock response url={} httpResponseBody={}", url, stringify(response));
         return new ActionResult(triggerId, stringify(payload), stringify(response));
     }
 
     @Override
     public OfflinePinResult getOfflinePin(RuntimeConfig config, String passKey) {
         Map<String, Object> payload = Map.of("pass_key", passKey);
+        String url = absoluteUrl(config, "/v2/lifecycle/dem_%s/get_device_passcode/".formatted(config.clientCode()));
+        log.info("Datacultr offline PIN request method=POST url={} httpRequestBody={}", url, stringify(payload));
         Object response = client(config).post()
                 .uri("/v2/lifecycle/dem_{client}/get_device_passcode/", config.clientCode())
                 .headers(headers -> headers.setBearerAuth(accessToken(config)))
@@ -176,6 +197,7 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
                 .body(payload)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr offline PIN response url={} httpResponseBody={}", url, stringify(response));
         String message = null;
         String passcode = null;
         if (response instanceof Map<?, ?> map) {
@@ -198,14 +220,18 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
     }
 
     private String login(RuntimeConfig config) {
+        Map<String, Object> payload = Map.of(
+                "username", config.username(),
+                "password", config.password());
+        String url = absoluteUrl(config, "/token/");
+        log.info("Datacultr login request method=POST url={} httpRequestBody={}", url, stringify(payload));
         Object response = client(config).post()
                 .uri("/token/")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "username", config.username(),
-                        "password", config.password()))
+                .body(payload)
                 .retrieve()
                 .body(Object.class);
+        log.info("Datacultr login response url={} httpResponseBody={}", url, stringify(response));
         if (!(response instanceof Map<?, ?> map)) {
             throw new BadRequestException("Datacultr login did not return a token payload");
         }
@@ -362,6 +388,11 @@ public class DatacultrDeviceControlGateway implements DeviceControlGateway {
             return value;
         }
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    }
+
+    private String absoluteUrl(RuntimeConfig config, String path) {
+        String baseUrl = trimTrailingSlash(config.baseUrl());
+        return path.startsWith("/") ? baseUrl + path : baseUrl + "/" + path;
     }
 
     private record CachedToken(String accessToken, Instant expiresAt) {

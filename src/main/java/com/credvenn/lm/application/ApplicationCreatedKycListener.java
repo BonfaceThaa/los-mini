@@ -22,8 +22,8 @@ public class ApplicationCreatedKycListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onApplicationCreated(ApplicationCreatedEvent event) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(event.tenantId(), event.applicationId())) {
-            log.info("Received application-created event and starting automatic background KYC");
-            kycService.run(event.tenantId(), event.applicationId(), event.actor());
+            log.info("Received application-created event and evaluating tenant KYC mode");
+            kycService.handleApplicationCreated(event.tenantId(), event.applicationId(), event.actor());
         }
     }
 }

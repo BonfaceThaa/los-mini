@@ -45,6 +45,14 @@ public class DeviceControlController {
         return ResponseEntity.ok(configService.get(actor.tenantId()));
     }
 
+    @GetMapping("/config/status")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_CONFIG_VIEW')")
+    @Operation(summary = "Confirm whether the current tenant has a Datacultr device-control configuration")
+    public ResponseEntity<DeviceControlDtos.TenantDeviceControlConfigStatusResponse> getConfigStatus() {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.ok(configService.getStatus(actor.tenantId()));
+    }
+
     @PutMapping("/config")
     @PreAuthorize("hasAuthority('DEVICE_CONTROL_CONFIG_MANAGE')")
     @Operation(summary = "Create or update the tenant's Datacultr device-control configuration")
@@ -184,6 +192,22 @@ public class DeviceControlController {
     public ResponseEntity<List<DeviceControlDtos.LoanDeviceControlStateResponse>> listStates() {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(collectionsService.listStates(actor.tenantId()));
+    }
+
+    @GetMapping("/applications/{applicationId}/state")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_ACTION_VIEW')")
+    @Operation(summary = "Load the current application/device state and auto-lock readiness for one application")
+    public ResponseEntity<DeviceControlDtos.ApplicationAutoLockStateResponse> getApplicationState(@PathVariable String applicationId) {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.ok(collectionsService.getApplicationAutoLockState(actor.tenantId(), applicationId));
+    }
+
+    @PostMapping("/applications/{applicationId}/replay-auto-lock")
+    @PreAuthorize("hasAuthority('DEVICE_CONTROL_ACTION_MANAGE')")
+    @Operation(summary = "Replay the auto-lock activation flow for an activated loan")
+    public ResponseEntity<DeviceControlDtos.ReplayAutoLockResponse> replayAutoLock(@PathVariable String applicationId) {
+        var actor = currentActorService.requireCurrentUser();
+        return ResponseEntity.accepted().body(collectionsService.replayAutoLock(actor.tenantId(), applicationId, actor.username()));
     }
 
     @GetMapping("/actions")

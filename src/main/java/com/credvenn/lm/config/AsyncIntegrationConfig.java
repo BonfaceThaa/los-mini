@@ -10,6 +10,8 @@ import com.credvenn.lm.security.AppSecurityProperties;
 import com.credvenn.lm.security.BootstrapSuperAdminProperties;
 import com.credvenn.lm.statementinbox.InboundStatementProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.credvenn.lm.statement.CladfyProperties;
 import com.credvenn.lm.statement.StatementProviderProperties;
 import java.util.Map;
@@ -56,8 +58,16 @@ public class AsyncIntegrationConfig {
     }
 
     @Bean
+    @Qualifier("smileIdRestClient")
+    RestClient smileIdRestClient(RestClient.Builder builder, KycProviderProperties properties) {
+        return builder.baseUrl(properties.smileId().baseUrl()).build();
+    }
+
+    @Bean
     ObjectMapper objectMapper() {
-        return new ObjectMapper();
+        return new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     @Bean

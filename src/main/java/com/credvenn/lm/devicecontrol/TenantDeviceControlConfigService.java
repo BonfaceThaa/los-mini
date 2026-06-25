@@ -50,6 +50,36 @@ public class TenantDeviceControlConfigService {
         return toResponse(config);
     }
 
+    @Transactional(readOnly = true)
+    public DeviceControlDtos.TenantDeviceControlConfigStatusResponse getStatus(String tenantId) {
+        tenantService.getRequiredTenant(tenantId);
+        TenantDeviceControlConfig config = configRepository.findByTenantId(tenantId).orElse(null);
+        if (config == null) {
+            return new DeviceControlDtos.TenantDeviceControlConfigStatusResponse(
+                    tenantId,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    null,
+                    null,
+                    "Tenant does not have a Datacultr device-control configuration");
+        }
+        return new DeviceControlDtos.TenantDeviceControlConfigStatusResponse(
+                tenantId,
+                true,
+                config.isEnabled(),
+                config.isLockEnabled(),
+                config.isUnlockEnabled(),
+                config.getEncryptedUsername() != null && !config.getEncryptedUsername().isBlank(),
+                config.getId(),
+                config.getProvider(),
+                config.isEnabled()
+                        ? "Tenant has an active device-control configuration record"
+                        : "Tenant has a device-control configuration record, but it is disabled");
+    }
+
     @Transactional
     public DeviceControlDtos.TenantDeviceControlConfigResponse upsert(String tenantId, DeviceControlDtos.UpsertTenantDeviceControlConfigRequest request) {
         tenantService.getRequiredTenant(tenantId);

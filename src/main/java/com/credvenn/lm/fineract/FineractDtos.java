@@ -16,8 +16,10 @@ public final class FineractDtos {
     @Schema(name = "LoanProductResponse")
     public record LoanProductResponse(
             String id,
+            String productCode,
             String name,
             String shortName,
+            String description,
             BigDecimal minPrincipal,
             BigDecimal maxPrincipal,
             Integer minNumberOfRepayments,
@@ -36,8 +38,10 @@ public final class FineractDtos {
         public static LoanProductResponse from(FineractLoanProduct product) {
             return new LoanProductResponse(
                     product.id(),
+                    null,
                     product.name(),
                     product.shortName(),
+                    null,
                     product.minPrincipal(),
                     product.maxPrincipal(),
                     product.minNumberOfRepayments(),
@@ -57,8 +61,10 @@ public final class FineractDtos {
         public static LoanProductResponse from(LoanProductMapping mapping) {
             return new LoanProductResponse(
                     String.valueOf(mapping.getFineractProductId()),
+                    mapping.getProductCode(),
                     mapping.getDisplayName(),
                     mapping.getShortName(),
+                    mapping.getDescription(),
                     mapping.getPrincipalMin(),
                     mapping.getPrincipalMax(),
                     mapping.getNumberOfRepayments(),
@@ -101,10 +107,8 @@ public final class FineractDtos {
 
         private static Integer interestRateFrequencyTypeId(String value) {
             return switch (normalize(value)) {
-                case "DAYS" -> 0;
                 case "MONTHS" -> 2;
-                case "WEEKS" -> 3;
-                case "YEARS" -> 4;
+                case "YEARS" -> 3;
                 default -> null;
             };
         }

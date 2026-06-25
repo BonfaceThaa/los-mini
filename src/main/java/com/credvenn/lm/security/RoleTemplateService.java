@@ -39,6 +39,7 @@ public class RoleTemplateService {
                         PermissionCatalog.CLIENT_CREATE.code(),
                         PermissionCatalog.LOAN_VIEW.code(),
                         PermissionCatalog.LOAN_CREATE.code(),
+                        PermissionCatalog.LOAN_PRODUCT_UPDATE.code(),
                         PermissionCatalog.GL_ACCOUNT_VIEW.code(),
                         PermissionCatalog.GL_ACCOUNT_CREATE.code(),
                         PermissionCatalog.ACCOUNTING_RULE_VIEW.code(),

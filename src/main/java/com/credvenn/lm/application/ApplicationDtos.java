@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 public final class ApplicationDtos {
@@ -18,9 +19,14 @@ public final class ApplicationDtos {
     @Schema(name = "CreateLoanRequestApplicationRequest")
     public record CreateLoanRequestApplicationRequest(
             @NotBlank @Size(max = 255) String applicantFirstName,
+            @Size(max = 255) String applicantMiddleName,
             @NotBlank @Size(max = 255) String applicantLastName,
             @NotBlank @Size(max = 50) String phoneNumber,
             @NotBlank @Size(max = 100) String nationalId,
+            @NotNull ApplicantIdType applicantIdType,
+            LocalDate dob,
+            @Size(max = 50) String gender,
+            @Size(max = 100) String statementOtp,
             @NotNull @Positive BigDecimal requestedAmount,
             @Positive Integer requestedTermMonths) {
     }
@@ -52,9 +58,14 @@ public final class ApplicationDtos {
             String id,
             String tenantId,
             String applicantFirstName,
+            String applicantMiddleName,
             String applicantLastName,
             String phoneNumber,
             String nationalId,
+            ApplicantIdType applicantIdType,
+            LocalDate dob,
+            String gender,
+            String statementOtp,
             BigDecimal requestedAmount,
             Integer requestedTermMonths,
             ApplicationStatus status,

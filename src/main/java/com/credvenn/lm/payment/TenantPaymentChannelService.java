@@ -191,7 +191,7 @@ public class TenantPaymentChannelService {
                 trimmedConfirmationUrl,
                 trimmedValidationUrl,
                 trimmedResponseType,
-                "0".equals(result.responseCode()) ? requestedAt : storedConfig.c2bLastRegisteredAt(),
+                isSuccessfulDarajaResponseCode(result.responseCode()) ? requestedAt : storedConfig.c2bLastRegisteredAt(),
                 requestedAt,
                 result.responseCode(),
                 result.responseDescription(),
@@ -244,5 +244,13 @@ public class TenantPaymentChannelService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean isSuccessfulDarajaResponseCode(String responseCode) {
+        if (responseCode == null) {
+            return false;
+        }
+        String normalized = responseCode.trim();
+        return "0".equals(normalized) || "00000000".equals(normalized);
     }
 }

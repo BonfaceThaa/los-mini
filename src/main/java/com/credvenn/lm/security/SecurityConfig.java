@@ -51,7 +51,8 @@ public class SecurityConfig {
                                 HttpMethod.POST,
                                 "/api/v1/public/payments/mpesa/callback",
                                 "/api/v1/public/payments/mpesa/deposits/callback",
-                                "/api/v1/public/tenants/*/payments/mpesa/deposits/callback",
+                                "/api/v1/public/tenants/*/collections/c2b/deposits/callback",
+                                "/api/v1/public/tenants/*/collections/c2b/deposits/validate",
                                 "/api/v1/public/integrations/cladfy/webhook",
                                 "/api/v1/public/tenants/*/payments/mpesa/stk/callback")
                         .permitAll()

@@ -22,6 +22,7 @@ import com.credvenn.lm.statement.StatementAnalysisStatus;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
 import com.credvenn.lm.subscription.SubscriptionGuardService;
 import com.credvenn.lm.tenant.Tenant;
+import com.credvenn.lm.tenant.TenantStatementAnalysisMode;
 import com.credvenn.lm.tenant.TenantService;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -102,22 +103,33 @@ public class ApplicationService {
             ApplicationDtos.CreateLoanRequestApplicationRequest request) {
         subscriptionGuardService.assertCanCreateApplication(tenantId);
         log.info(
-                "Creating loan application for tenantId={} applicant={} {} phone={} nationalId={} requestedAmount={} requestedTermMonths={}",
+                "Creating loan application for tenantId={} applicant={} {} phone={} nationalId={} applicantIdType={} requestedAmount={} requestedTermMonths={}",
                 tenantId,
                 request.applicantFirstName().trim(),
                 request.applicantLastName().trim(),
                 LoggingContext.maskPhone(request.phoneNumber()),
                 LoggingContext.maskNationalId(request.nationalId()),
+                request.applicantIdType(),
                 request.requestedAmount(),
                 request.requestedTermMonths());
         LoanRequestApplication application = new LoanRequestApplication();
         application.setTenantId(tenantId);
         application.setApplicantFirstName(request.applicantFirstName().trim());
+        application.setApplicantMiddleName(trimToNull(request.applicantMiddleName()));
         application.setApplicantLastName(request.applicantLastName().trim());
         application.setPhoneNumber(request.phoneNumber().trim());
         application.setNationalId(request.nationalId().trim());
+        application.setApplicantIdType(request.applicantIdType());
+        application.setDob(request.dob());
+        application.setGender(trimToNull(request.gender()));
+        application.setStatementOtp(trimToNull(request.statementOtp()));
         application.setRequestedAmount(request.requestedAmount());
         application.setRequestedTermMonths(request.requestedTermMonths());
+        var existingClient = clientRecordService.findByTenantIdAndNationalId(tenantId, request.nationalId());
+        if (existingClient != null) {
+            application.setFineractClientId(existingClient.getFineractClientId());
+            log.info("Matched existing client record by nationalId and reusing fineractClientId={}", existingClient.getFineractClientId());
+        }
         application.setStatus(ApplicationStatus.SUBMITTED);
         application = applicationRepository.save(application);
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, application.getId())) {
@@ -300,11 +312,6 @@ public class ApplicationService {
             log.info("Activating Fineract loan fineractLoanId={}", application.getFineractLoanId());
             fineractGateway.activateLoan(tenant, application);
             changeStatus(application, ApplicationStatus.FINERACT_LOAN_ACTIVATED, actor, "Fineract loan activated");
-            applicationEventPublisher.publishEvent(new LoanActivatedEvent(
-                    tenantId,
-                    applicationId,
-                    application.getFineractLoanId(),
-                    actor));
             subscriptionBillingService.evaluateNextCyclePricingMode(tenantId);
             return get(tenantId, applicationId);
         }
@@ -319,7 +326,24 @@ public class ApplicationService {
     }
 
     @Transactional
-    public void handleKycPassed(String tenantId, String applicationId, String actor, String fineractClientId) {
+    public void markKycPassed(String tenantId, String applicationId, String actor, String reason) {
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
+            LoanRequestApplication application = getRequired(tenantId, applicationId);
+            log.info("KYC passed and is ready for separate Fineract client provisioning");
+            changeStatus(application, ApplicationStatus.KYC_PASSED, actor, reason);
+        }
+    }
+
+    @Transactional
+    public void markClientCreationInProgress(String tenantId, String applicationId, String actor) {
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
+            LoanRequestApplication application = getRequired(tenantId, applicationId);
+            changeStatus(application, ApplicationStatus.CLIENT_CREATION_IN_PROGRESS, actor, "Fineract client creation started");
+        }
+    }
+
+    @Transactional
+    public void handleClientCreated(String tenantId, String applicationId, String actor, String fineractClientId) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
             application.setFineractClientId(fineractClientId);
@@ -327,10 +351,25 @@ public class ApplicationService {
             clientRecordService.upsertFromFineract(
                     tenantId,
                     applicationId,
+                    application.getNationalId(),
                     fineractGateway.fetchClient(tenant, fineractClientId));
-            log.info("KYC passed and Fineract client created with fineractClientId={}", fineractClientId);
-            changeStatus(application, ApplicationStatus.KYC_PASSED_CLIENT_CREATED, actor, "KYC passed and Fineract client created");
+            log.info("Fineract client created after KYC pass with fineractClientId={}", fineractClientId);
+            changeStatus(application, ApplicationStatus.KYC_PASSED_CLIENT_CREATED, actor, "Fineract client created after KYC pass");
+            if (tenant.getStatementAnalysisMode() == TenantStatementAnalysisMode.DISABLED) {
+                recordDisabledStatementAnalysis(application, actor);
+                changeStatus(application, ApplicationStatus.OFFERS_READY, actor, "Statement analysis disabled for tenant");
+                return;
+            }
             changeStatus(application, ApplicationStatus.STATEMENT_PENDING, actor, "Awaiting statement upload");
+        }
+    }
+
+    @Transactional
+    public void handleClientCreationFailed(String tenantId, String applicationId, String actor, String reason) {
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
+            LoanRequestApplication application = getRequired(tenantId, applicationId);
+            log.warn("Fineract client creation failed after KYC pass: {}", reason);
+            changeStatus(application, ApplicationStatus.CLIENT_CREATION_FAILED, actor, reason);
         }
     }
 
@@ -397,6 +436,7 @@ public class ApplicationService {
             }
             FineractLoanProduct product = requireActiveProduct(tenantId, application.getSelectedFineractProductId());
             Integer approvedTermMonths = resolveApprovedTermMonths(product);
+            int repaymentCount = resolveRepaymentCount(product, approvedTermMonths);
             BigDecimal cashPrice = requiredPositive(device.getCashPrice(), "Assigned device cash price must be configured");
             BigDecimal depositValue = requiredPositive(device.getDepositValue(), "Assigned device deposit value must be configured");
             if (device.getDepositType() == null) {
@@ -407,8 +447,13 @@ public class ApplicationService {
             if (principal.signum() <= 0) {
                 throw new BadRequestException("Computed principal must be greater than zero");
             }
-            BigDecimal installmentAmount = calculateInstallmentAmount(principal, product.interestRatePerPeriod(), approvedTermMonths);
-            BigDecimal totalRepayments = installmentAmount.multiply(BigDecimal.valueOf(approvedTermMonths)).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal installmentAmount = calculateInstallmentAmount(
+                    principal,
+                    product.interestRatePerPeriod(),
+                    product.interestRateFrequencyType(),
+                    approvedTermMonths,
+                    repaymentCount);
+            BigDecimal totalRepayments = installmentAmount.multiply(BigDecimal.valueOf(repaymentCount)).setScale(2, RoundingMode.HALF_UP);
             BigDecimal totalPayment = depositAmount.add(totalRepayments).setScale(2, RoundingMode.HALF_UP);
             BigDecimal marginAmount = totalPayment.subtract(cashPrice).setScale(2, RoundingMode.HALF_UP);
 
@@ -447,14 +492,42 @@ public class ApplicationService {
     }
 
     private List<FineractLoanProduct> getEligibleProductsInternal(LoanRequestApplication application) {
-        Optional<StatementAnalysis> latestAnalysis = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId());
-        if (latestAnalysis.isEmpty() || latestAnalysis.get().getStatus() != StatementAnalysisStatus.PASSED) {
-            return List.of();
+        Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
+        if (tenant.getStatementAnalysisMode() != TenantStatementAnalysisMode.DISABLED) {
+            Optional<StatementAnalysis> latestAnalysis = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId());
+            if (latestAnalysis.isEmpty() || latestAnalysis.get().getStatus() != StatementAnalysisStatus.PASSED) {
+                return List.of();
+            }
         }
         return getActiveTenantProducts(application.getTenantId()).stream()
                 .filter(product -> product.maxPrincipal() == null || product.maxPrincipal().compareTo(application.getRequestedAmount()) >= 0)
                 .filter(product -> product.minPrincipal() == null || product.minPrincipal().compareTo(application.getRequestedAmount()) <= 0)
                 .toList();
+    }
+
+    private void recordDisabledStatementAnalysis(LoanRequestApplication application, String actor) {
+        StatementAnalysis existing = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId()).orElse(null);
+        if (existing != null && "DISABLED".equals(existing.getProvider())) {
+            existing.setStatus(StatementAnalysisStatus.PASSED);
+            existing.setProviderStatus("BYPASSED");
+            existing.setRecommendation("BYPASS");
+            existing.setSummary("Statement analysis disabled for tenant");
+            existing.setSourceDocumentId(null);
+            existing.setRawProviderResponse("Statement analysis bypassed because tenant statementAnalysisMode=DISABLED");
+            return;
+        }
+        StatementAnalysis analysis = new StatementAnalysis();
+        analysis.setTenantId(application.getTenantId());
+        analysis.setApplicationId(application.getId());
+        analysis.setProvider("DISABLED");
+        analysis.setProviderStatus("BYPASSED");
+        analysis.setStatus(StatementAnalysisStatus.PASSED);
+        analysis.setSourceDocumentId(null);
+        analysis.setRecommendation("BYPASS");
+        analysis.setSummary("Statement analysis disabled for tenant");
+        analysis.setRawProviderResponse("Statement analysis bypassed because tenant statementAnalysisMode=DISABLED");
+        statementAnalysisRepository.save(analysis);
+        log.info("Bypassed statement analysis because tenant statementAnalysisMode=DISABLED actor={}", actor);
     }
 
     private FineractLoanProduct requireActiveProduct(String tenantId, String productId) {
@@ -511,6 +584,15 @@ public class ApplicationService {
         history.setChangedBy(actor);
         history.setReason(reason);
         statusHistoryRepository.save(history);
+        if (newStatus == ApplicationStatus.FINERACT_LOAN_ACTIVATED
+                && application.getFineractLoanId() != null
+                && !application.getFineractLoanId().isBlank()) {
+            applicationEventPublisher.publishEvent(new LoanActivatedEvent(
+                    application.getTenantId(),
+                    application.getId(),
+                    application.getFineractLoanId(),
+                    actor));
+        }
     }
 
     static ApplicationDtos.LoanRequestApplicationResponse toResponse(
@@ -520,9 +602,14 @@ public class ApplicationService {
                 application.getId(),
                 application.getTenantId(),
                 application.getApplicantFirstName(),
+                application.getApplicantMiddleName(),
                 application.getApplicantLastName(),
                 application.getPhoneNumber(),
                 application.getNationalId(),
+                application.getApplicantIdType(),
+                application.getDob(),
+                application.getGender(),
+                application.getStatementOtp(),
                 application.getRequestedAmount(),
                 application.getRequestedTermMonths(),
                 application.getStatus(),
@@ -562,6 +649,14 @@ public class ApplicationService {
                         .toList());
     }
 
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private Integer resolveApprovedTermMonths(FineractLoanProduct product) {
         if (product.numberOfRepayments() != null && product.numberOfRepayments() > 0) {
             int repaymentEvery = product.repaymentEvery() == null || product.repaymentEvery() <= 0 ? 1 : product.repaymentEvery();
@@ -586,6 +681,16 @@ public class ApplicationService {
             return derivedMinTermMonths;
         }
         throw new BadRequestException("Selected Fineract product does not expose a single supported term");
+    }
+
+    private int resolveRepaymentCount(FineractLoanProduct product, Integer approvedTermMonths) {
+        if (product.numberOfRepayments() != null && product.numberOfRepayments() > 0) {
+            return product.numberOfRepayments();
+        }
+        if (approvedTermMonths != null && approvedTermMonths > 0) {
+            return approvedTermMonths;
+        }
+        throw new BadRequestException("Number of repayments must be greater than zero");
     }
 
     private Integer minTermMonths(FineractLoanProduct product) {
@@ -638,10 +743,8 @@ public class ApplicationService {
 
     private Integer interestRateFrequencyTypeId(String value) {
         return switch (normalize(value)) {
-            case "DAYS" -> 0;
             case "MONTHS" -> 2;
-            case "WEEKS" -> 3;
-            case "YEARS" -> 4;
+            case "YEARS" -> 3;
             default -> null;
         };
     }
@@ -679,7 +782,15 @@ public class ApplicationService {
         return depositAmount;
     }
 
-    private BigDecimal calculateInstallmentAmount(BigDecimal principal, BigDecimal interestRatePerPeriod, int numberOfRepayments) {
+    private BigDecimal calculateInstallmentAmount(
+            BigDecimal principal,
+            BigDecimal interestRatePerPeriod,
+            Integer interestRateFrequencyType,
+            int termInMonths,
+            int numberOfRepayments) {
+        if (termInMonths <= 0) {
+            throw new BadRequestException("Loan term must be greater than zero");
+        }
         if (numberOfRepayments <= 0) {
             throw new BadRequestException("Number of repayments must be greater than zero");
         }
@@ -687,13 +798,17 @@ public class ApplicationService {
         if (ratePercent.signum() == 0) {
             return principal.divide(BigDecimal.valueOf(numberOfRepayments), 2, RoundingMode.HALF_UP);
         }
-        double r = ratePercent.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP).doubleValue();
-        double onePlusRPowerN = Math.pow(1 + r, numberOfRepayments);
-        double numerator = principal.doubleValue() * (r * onePlusRPowerN);
-        double denominator = onePlusRPowerN - 1;
-        if (denominator == 0d) {
-            throw new BadRequestException("Unable to calculate installment amount for the selected product");
-        }
-        return BigDecimal.valueOf(numerator / denominator).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalInterestMultiplier = switch (interestRateFrequencyType == null ? 2 : interestRateFrequencyType) {
+            case 3 -> ratePercent
+                    .multiply(BigDecimal.valueOf(termInMonths), PRICING_CONTEXT)
+                    .divide(BigDecimal.valueOf(12), 10, RoundingMode.HALF_UP)
+                    .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+            case 2 -> ratePercent
+                    .multiply(BigDecimal.valueOf(termInMonths), PRICING_CONTEXT)
+                    .divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+            default -> throw new BadRequestException("Unsupported interest rate frequency type for installment calculation");
+        };
+        BigDecimal totalRepaymentAmount = principal.multiply(BigDecimal.ONE.add(totalInterestMultiplier), PRICING_CONTEXT);
+        return totalRepaymentAmount.divide(BigDecimal.valueOf(numberOfRepayments), 2, RoundingMode.HALF_UP);
     }
 }

@@ -164,6 +164,12 @@ public final class PaymentDtos {
             String ResultDesc) {
     }
 
+    @Schema(name = "DarajaValidationResponse")
+    public record DarajaValidationResponse(
+            String ResultCode,
+            String ResultDesc) {
+    }
+
     @Schema(name = "DepositPaymentResponse")
     public record DepositPaymentResponse(
             String id,

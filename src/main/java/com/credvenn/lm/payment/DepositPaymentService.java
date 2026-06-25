@@ -25,6 +25,9 @@ public class DepositPaymentService {
     private static final Logger log = LoggerFactory.getLogger(DepositPaymentService.class);
     private static final DateTimeFormatter TRANSACTION_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ZoneId MPESA_ZONE = ZoneId.of("Africa/Nairobi");
+    private static final List<DepositPaymentStatus> EXISTING_DEPOSIT_STATUSES = List.of(
+            DepositPaymentStatus.RECEIVED,
+            DepositPaymentStatus.MATCHED);
     private static final Map<String, String> DEPOSIT_SORTS = new LinkedHashMap<>();
 
     static {
@@ -107,6 +110,30 @@ public class DepositPaymentService {
                 rawPayload);
     }
 
+    @Transactional(readOnly = true)
+    public C2bValidationDecision validateDepositCallback(
+            String tenantId,
+            String businessShortCode,
+            String billRefNumber) {
+        TenantPaymentChannel channel = resolveChannel(tenantId, businessShortCode);
+        String resolvedTenantId = channel.getTenantId();
+        String normalizedPhoneNumber = normalizePhone(billRefNumber);
+        LoanRequestApplication application = findMatchingApplication(resolvedTenantId, normalizedPhoneNumber);
+        if (application == null) {
+            return C2bValidationDecision.reject("No tenant application matched the bill reference phone number");
+        }
+
+        boolean existingDeposit = depositPaymentRepository.existsByTenantIdAndMatchedApplicationIdAndStatusIn(
+                resolvedTenantId,
+                application.getId(),
+                EXISTING_DEPOSIT_STATUSES);
+        if (existingDeposit) {
+            return C2bValidationDecision.reject("Matched application already has a deposit");
+        }
+
+        return C2bValidationDecision.accept(application.getId());
+    }
+
     private DepositPayment acceptDepositCallbackInternal(
             String tenantId,
             String transactionType,
@@ -139,7 +166,7 @@ public class DepositPaymentService {
         depositPayment.setTransactionAmount(transAmount);
         depositPayment.setTransactionTime(parseTransactionTime(transTime));
         depositPayment.setMpesaReceiptNumber(receiptNumber);
-        depositPayment.setMsisdn(msisdn);
+        // depositPayment.setMsisdn(msisdn);
         depositPayment.setPayerFirstName(firstName);
         depositPayment.setPayerMiddleName(middleName);
         depositPayment.setPayerLastName(lastName);
@@ -255,5 +282,21 @@ public class DepositPaymentService {
             return digits;
         }
         return digits;
+    }
+
+    public record C2bValidationDecision(
+            boolean accepted,
+            String resultCode,
+            String resultDesc,
+            String matchedApplicationId,
+            String reason) {
+
+        static C2bValidationDecision accept(String matchedApplicationId) {
+            return new C2bValidationDecision(true, "0", "Accepted", matchedApplicationId, null);
+        }
+
+        static C2bValidationDecision reject(String reason) {
+            return new C2bValidationDecision(false, "C2B00011", "Rejected", null, reason);
+        }
     }
 }

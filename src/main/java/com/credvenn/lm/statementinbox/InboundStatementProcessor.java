@@ -27,6 +27,9 @@ public class InboundStatementProcessor {
             ApplicationStatus.PENDING_KYC,
             ApplicationStatus.KYC_IN_PROGRESS,
             ApplicationStatus.KYC_MANUAL_REVIEW,
+            ApplicationStatus.KYC_PASSED,
+            ApplicationStatus.CLIENT_CREATION_IN_PROGRESS,
+            ApplicationStatus.CLIENT_CREATION_FAILED,
             ApplicationStatus.KYC_PASSED_CLIENT_CREATED,
             ApplicationStatus.STATEMENT_PENDING);
 
@@ -84,10 +87,10 @@ public class InboundStatementProcessor {
                     candidates.size(), matches.size(), maskPhoneToken(phoneToken));
 
             if (matches.isEmpty()) {
-                receipt.setMatchStatus(InboundStatementMatchStatus.UNMATCHED);
-                receipt.setFailureReason("No recent application matched the phone token extracted from the filename");
+                receipt.setMatchStatus(InboundStatementMatchStatus.WAITING_FOR_APPLICATION);
+                receipt.setFailureReason("Waiting for a matching application to be created");
                 receipt.setProcessedAt(Instant.now());
-                log.warn("Inbound statement could not be matched to a recent application");
+                log.info("Inbound statement is waiting for a matching application to be created");
                 return;
             }
 
@@ -100,6 +103,16 @@ public class InboundStatementProcessor {
             }
 
             LoanRequestApplication application = matches.get(0);
+            if (!hasStatementOtp(application)) {
+                receipt.setTenantId(application.getTenantId());
+                receipt.setMatchedApplicationId(application.getId());
+                receipt.setMatchStatus(InboundStatementMatchStatus.BLOCKED_MISSING_STATEMENT_OTP);
+                receipt.setFailureReason("Matched application does not have statement OTP");
+                receipt.setBackgroundError(null);
+                receipt.setProcessedAt(Instant.now());
+                log.warn("Inbound statement matched applicationId={} but statement OTP is missing", application.getId());
+                return;
+            }
             attachAndTrigger(receipt, application, actor, InboundStatementMatchStatus.MATCHED, null);
         } catch (Exception ex) {
             receipt.setMatchStatus(InboundStatementMatchStatus.FAILED);
@@ -123,6 +136,39 @@ public class InboundStatementProcessor {
         receipt.setResolvedBy(actor);
         receipt.setResolvedAt(Instant.now());
         return receipt;
+    }
+
+    @Transactional
+    public void retryWaitingReceiptsForApplication(String tenantId, LoanRequestApplication application, String actor) {
+        String phoneToken = normalizeDigits(application.getPhoneNumber());
+        if (phoneToken.isBlank()) {
+            return;
+        }
+        List<InboundStatementReceipt> waitingReceipts = receiptRepository
+                .findAllByTenantIdAndMatchStatusInOrderByCreatedAtDesc(
+                        tenantId,
+                        List.of(
+                                InboundStatementMatchStatus.WAITING_FOR_APPLICATION,
+                                InboundStatementMatchStatus.BLOCKED_MISSING_STATEMENT_OTP))
+                .stream()
+                .filter(receipt -> phoneMatches(receipt.getExtractedPhoneToken(), phoneToken))
+                .toList();
+        if (waitingReceipts.isEmpty()) {
+            return;
+        }
+        log.info("Retrying inbound statement receiptCount={} for applicationId={}", waitingReceipts.size(), application.getId());
+        for (InboundStatementReceipt receipt : waitingReceipts) {
+            if (!hasStatementOtp(application)) {
+                receipt.setTenantId(application.getTenantId());
+                receipt.setMatchedApplicationId(application.getId());
+                receipt.setMatchStatus(InboundStatementMatchStatus.BLOCKED_MISSING_STATEMENT_OTP);
+                receipt.setFailureReason("Matched application does not have statement OTP");
+                receipt.setBackgroundError(null);
+                receipt.setProcessedAt(Instant.now());
+                continue;
+            }
+            attachAndTrigger(receipt, application, actor, InboundStatementMatchStatus.MATCHED, "Automatically retried after application creation");
+        }
     }
 
     private void attachAndTrigger(
@@ -185,6 +231,10 @@ public class InboundStatementProcessor {
 
     private String normalizeDigits(String value) {
         return value == null ? "" : value.replaceAll("\\D", "");
+    }
+
+    private boolean hasStatementOtp(LoanRequestApplication application) {
+        return application.getStatementOtp() != null && !application.getStatementOtp().isBlank();
     }
 
     private String maskPhoneToken(String phoneToken) {

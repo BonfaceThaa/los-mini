@@ -19,6 +19,8 @@ public final class TenantDtos {
             @NotBlank @Size(max = 100) @Pattern(regexp = "^[a-zA-Z0-9_-]+$") String code,
             @NotBlank @Size(max = 255) String name,
             @NotBlank @Size(max = 100) String fineractTenantId,
+            TenantKycMode kycMode,
+            TenantStatementAnalysisMode statementAnalysisMode,
             @NotNull @Valid InitialAdminRequest initialAdmin) {
     }
 
@@ -33,6 +35,14 @@ public final class TenantDtos {
     public record UpdateTenantStatusRequest(boolean active) {
     }
 
+    @Schema(name = "UpdateTenantKycModeRequest")
+    public record UpdateTenantKycModeRequest(@NotNull TenantKycMode kycMode) {
+    }
+
+    @Schema(name = "UpdateTenantStatementAnalysisModeRequest")
+    public record UpdateTenantStatementAnalysisModeRequest(@NotNull TenantStatementAnalysisMode statementAnalysisMode) {
+    }
+
     @Schema(name = "TenantResponse")
     public record TenantResponse(
             String id,
@@ -40,6 +50,8 @@ public final class TenantDtos {
             String name,
             String fineractTenantId,
             boolean active,
+            TenantKycMode kycMode,
+            TenantStatementAnalysisMode statementAnalysisMode,
             Instant createdAt,
             Instant updatedAt) {
     }

@@ -9,5 +9,7 @@ public interface ClientRecordRepository extends JpaRepository<ClientRecord, Stri
 
     Optional<ClientRecord> findByTenantIdAndFineractClientId(String tenantId, String fineractClientId);
 
+    Optional<ClientRecord> findByTenantIdAndNationalId(String tenantId, String nationalId);
+
     Page<ClientRecord> findAllByTenantId(String tenantId, Pageable pageable);
 }

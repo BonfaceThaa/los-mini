@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -71,6 +72,21 @@ public class StatementAnalysis extends AuditableEntity {
     @Column(name = "raw_provider_response", columnDefinition = "TEXT")
     private String rawProviderResponse;
 
+    @Column(name = "next_status_check_at")
+    private Instant nextStatusCheckAt;
+
+    @Column(name = "last_status_check_at")
+    private Instant lastStatusCheckAt;
+
+    @Column(name = "status_check_attempts", nullable = false)
+    private int statusCheckAttempts;
+
+    @Column(name = "completion_source", length = 50)
+    private String completionSource;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
     @PrePersist
     void assignId() {
         if (id == null) {
@@ -113,4 +129,14 @@ public class StatementAnalysis extends AuditableEntity {
     public void setRiskTier(String riskTier) { this.riskTier = riskTier; }
     public String getRawProviderResponse() { return rawProviderResponse; }
     public void setRawProviderResponse(String rawProviderResponse) { this.rawProviderResponse = rawProviderResponse; }
+    public Instant getNextStatusCheckAt() { return nextStatusCheckAt; }
+    public void setNextStatusCheckAt(Instant nextStatusCheckAt) { this.nextStatusCheckAt = nextStatusCheckAt; }
+    public Instant getLastStatusCheckAt() { return lastStatusCheckAt; }
+    public void setLastStatusCheckAt(Instant lastStatusCheckAt) { this.lastStatusCheckAt = lastStatusCheckAt; }
+    public int getStatusCheckAttempts() { return statusCheckAttempts; }
+    public void setStatusCheckAttempts(int statusCheckAttempts) { this.statusCheckAttempts = statusCheckAttempts; }
+    public String getCompletionSource() { return completionSource; }
+    public void setCompletionSource(String completionSource) { this.completionSource = completionSource; }
+    public Instant getCompletedAt() { return completedAt; }
+    public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
 }

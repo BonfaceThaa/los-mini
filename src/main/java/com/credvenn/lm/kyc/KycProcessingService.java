@@ -3,15 +3,10 @@ package com.credvenn.lm.kyc;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.common.logging.LoggingContext;
-import com.credvenn.lm.fineract.FineractGateway;
-import com.credvenn.lm.subscription.SubscriptionBillingService;
-import com.credvenn.lm.tenant.Tenant;
-import com.credvenn.lm.tenant.TenantService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class KycProcessingService {
@@ -21,27 +16,20 @@ public class KycProcessingService {
     private final KycCheckRepository kycCheckRepository;
     private final KycProviderRegistry kycProviderRegistry;
     private final ApplicationService applicationService;
-    private final TenantService tenantService;
-    private final FineractGateway fineractGateway;
-    private final SubscriptionBillingService subscriptionBillingService;
+    private final KycApprovalService kycApprovalService;
 
     public KycProcessingService(
             KycCheckRepository kycCheckRepository,
             KycProviderRegistry kycProviderRegistry,
             ApplicationService applicationService,
-            TenantService tenantService,
-            FineractGateway fineractGateway,
-            SubscriptionBillingService subscriptionBillingService) {
+            KycApprovalService kycApprovalService) {
         this.kycCheckRepository = kycCheckRepository;
         this.kycProviderRegistry = kycProviderRegistry;
         this.applicationService = applicationService;
-        this.tenantService = tenantService;
-        this.fineractGateway = fineractGateway;
-        this.subscriptionBillingService = subscriptionBillingService;
+        this.kycApprovalService = kycApprovalService;
     }
 
     @Async
-    @Transactional
     public void process(String tenantId, String applicationId, String actor) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             log.info("Starting asynchronous KYC processing using provider={}", kycProviderRegistry.currentProvider().providerCode());
@@ -58,13 +46,17 @@ public class KycProcessingService {
             check.setStatus(decision.status());
             check.setProviderReference(decision.providerReference());
             check.setSummary(decision.summary());
+            applyActionDetails(check, decision.actionDetails());
             log.info("KYC provider completed with status={} providerReference={}", decision.status(), decision.providerReference());
+            check = kycCheckRepository.save(check);
 
             if (decision.status() == KycStatus.PASSED) {
-                Tenant tenant = tenantService.getRequiredTenant(tenantId);
-                String fineractClientId = fineractGateway.createClient(tenant, application);
-                subscriptionBillingService.chargeKycSuccess(tenantId, check.getId(), actor);
-                applicationService.handleKycPassed(tenantId, applicationId, actor, fineractClientId);
+                kycApprovalService.approveAndRequestClientProvisioning(
+                        tenantId,
+                        applicationId,
+                        actor,
+                        check.getId(),
+                        "KYC passed");
             } else if (decision.status() == KycStatus.MANUAL_REVIEW_REQUIRED) {
                 applicationService.handleKycManualReview(tenantId, applicationId, actor, "KYC requires manual review");
             } else {
@@ -74,5 +66,17 @@ public class KycProcessingService {
             log.error("Asynchronous KYC processing failed", ex);
             throw ex;
         }
+    }
+
+    private void applyActionDetails(KycCheck check, KycProvider.KycActionDetails details) {
+        check.setActionNames(details == null ? null : details.names());
+        check.setActionFirstName(details == null ? null : details.firstName());
+        check.setActionLastName(details == null ? null : details.lastName());
+        check.setActionOtherNames(details == null ? null : details.otherNames());
+        check.setActionDob(details == null ? null : details.dob());
+        check.setActionGender(details == null ? null : details.gender());
+        check.setActionPhoneNumber(details == null ? null : details.phoneNumber());
+        check.setActionVerifyIdNumber(details == null ? null : details.verifyIdNumber());
+        check.setActionIdVerification(details == null ? null : details.idVerification());
     }
 }

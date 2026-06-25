@@ -64,6 +64,34 @@ public interface FineractGateway {
             Long overpaymentLiabilityAccountId) {
     }
 
+    record UpdateLoanProductRequest(
+            String name,
+            String shortName,
+            String description,
+            String currencyCode,
+            BigDecimal principal,
+            BigDecimal minPrincipal,
+            BigDecimal maxPrincipal,
+            Integer numberOfRepayments,
+            Integer repaymentEvery,
+            Integer repaymentFrequencyType,
+            BigDecimal interestRatePerPeriod,
+            Integer interestRateFrequencyType,
+            Integer interestType,
+            Integer interestCalculationPeriodType,
+            Integer amortizationType,
+            String transactionProcessingStrategyCode,
+            Long loanPortfolioAccountId,
+            Long fundSourceAccountId,
+            Long interestOnLoanAccountId,
+            Long incomeFromFeeAccountId,
+            Long incomeFromPenaltyAccountId,
+            Long incomeFromRecoveryAccountId,
+            Long writeOffAccountId,
+            Long transfersInSuspenseAccountId,
+            Long overpaymentLiabilityAccountId) {
+    }
+
     record CreateGlAccountRequest(
             String name,
             String glCode,
@@ -278,6 +306,8 @@ public interface FineractGateway {
     FineractClient fetchClient(Tenant tenant, String fineractClientId);
 
     String createLoanProduct(Tenant tenant, CreateLoanProductRequest request);
+
+    void updateLoanProduct(Tenant tenant, String fineractProductId, UpdateLoanProductRequest request);
 
     CreatedGlAccount createGlAccount(Tenant tenant, CreateGlAccountRequest request);
 

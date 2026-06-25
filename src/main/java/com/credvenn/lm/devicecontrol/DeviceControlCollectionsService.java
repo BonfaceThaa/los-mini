@@ -290,11 +290,7 @@ public class DeviceControlCollectionsService {
         }
         LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
                 .orElseThrow(() -> new NotFoundException("Loan application not found"));
-        LoanDeviceControlState state = ensureState(application);
-        Tenant tenant = tenantService.getRequiredTenant(tenantId);
-        FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, fineractLoanId);
-        applySnapshot(state, snapshot);
-        activateAutoLockIfEligible(config, application, state, snapshot.nextDueDate(), DeviceControlTriggerType.LOAN_ACTIVATED, "loan-activation", actor);
+        processAutoLockActivation(config, application, fineractLoanId, DeviceControlTriggerType.LOAN_ACTIVATED, "loan-activation", actor);
     }
 
     @Async
@@ -325,6 +321,111 @@ public class DeviceControlCollectionsService {
         return stateRepository.findAllByTenantIdOrderByUpdatedAtDesc(tenantId).stream()
                 .map(DeviceControlCollectionsService::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public DeviceControlDtos.ApplicationAutoLockStateResponse getApplicationAutoLockState(String tenantId, String applicationId) {
+        LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Loan application not found"));
+        TenantDeviceControlConfig config = configRepository.findByTenantId(tenantId).orElse(null);
+        LoanDeviceControlState state = stateRepository.findByApplicationId(applicationId).orElse(null);
+
+        List<String> missingRequirements = new ArrayList<>();
+        if (application.getStatus() != ApplicationStatus.FINERACT_LOAN_ACTIVATED) {
+            missingRequirements.add("Application status must be FINERACT_LOAN_ACTIVATED");
+        }
+        if (application.getFineractLoanId() == null || application.getFineractLoanId().isBlank()) {
+            missingRequirements.add("Application must have a Fineract loan id");
+        }
+        if (application.getAssignedDeviceId() == null || application.getAssignedDeviceId().isBlank()) {
+            missingRequirements.add("Application must have an assigned device");
+        }
+        if (application.getAssignedDeviceImei1() == null || application.getAssignedDeviceImei1().isBlank()) {
+            missingRequirements.add("Assigned device must have IMEI 1");
+        }
+        if (config == null) {
+            missingRequirements.add("Tenant must have a device-control configuration");
+        } else {
+            if (!config.isEnabled()) {
+                missingRequirements.add("Tenant device control must be enabled");
+            }
+            if (!config.isLockEnabled()) {
+                missingRequirements.add("Tenant device-control lock actions must be enabled");
+            }
+        }
+        if (state == null) {
+            missingRequirements.add("Loan device-control state has not been created yet");
+        } else {
+            if (state.getNextDueDate() == null) {
+                missingRequirements.add("Loan collections snapshot must provide a next due date");
+            } else {
+                if (!state.getNextDueDate().isAfter(LocalDate.now(NAIROBI_ZONE))) {
+                    missingRequirements.add("Next due date must be after today in Africa/Nairobi");
+                }
+                if (actionLogRepository.existsByApplicationIdAndDueDateAndActionTypeAndStatusIn(
+                        applicationId,
+                        state.getNextDueDate(),
+                        DeviceControlActionType.AUTO_LOCK_ACTIVATE,
+                        Set.of(DeviceControlActionStatus.PENDING, DeviceControlActionStatus.SUCCEEDED))) {
+                    missingRequirements.add("Auto-lock has already been queued or activated for the next due date");
+                }
+            }
+            if (state.isHasOverdueInstallment()) {
+                missingRequirements.add("Loan must not have an overdue installment");
+            }
+        }
+
+        boolean autoLockAlreadyQueuedOrActivated = state != null
+                && state.getNextDueDate() != null
+                && actionLogRepository.existsByApplicationIdAndDueDateAndActionTypeAndStatusIn(
+                        applicationId,
+                        state.getNextDueDate(),
+                        DeviceControlActionType.AUTO_LOCK_ACTIVATE,
+                        Set.of(DeviceControlActionStatus.PENDING, DeviceControlActionStatus.SUCCEEDED));
+
+        return new DeviceControlDtos.ApplicationAutoLockStateResponse(
+                application.getId(),
+                application.getStatus(),
+                application.getFineractLoanId(),
+                application.getAssignedDeviceId(),
+                application.getAssignedDeviceName(),
+                application.getAssignedDeviceImei1(),
+                application.getAssignedDeviceImei2(),
+                config != null,
+                config != null && config.isEnabled(),
+                config != null && config.isLockEnabled(),
+                state != null,
+                state == null ? null : state.getCurrentState(),
+                state == null ? null : state.getNextDueDate(),
+                state != null && state.isHasOverdueInstallment(),
+                state == null ? null : state.getDaysOverdue(),
+                autoLockAlreadyQueuedOrActivated,
+                missingRequirements.isEmpty(),
+                missingRequirements);
+    }
+
+    @Transactional
+    public DeviceControlDtos.ReplayAutoLockResponse replayAutoLock(String tenantId, String applicationId, String actor) {
+        LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Loan application not found"));
+        if (application.getStatus() != ApplicationStatus.FINERACT_LOAN_ACTIVATED) {
+            throw new BadRequestException("Auto-lock replay is only allowed for FINERACT_LOAN_ACTIVATED applications");
+        }
+        if (application.getFineractLoanId() == null || application.getFineractLoanId().isBlank()) {
+            throw new BadRequestException("Application does not have a Fineract loan id");
+        }
+        TenantDeviceControlConfig config = configService.requireConfig(tenantId);
+        if (!config.isEnabled()) {
+            throw new BadRequestException("Device control is not enabled for this tenant");
+        }
+        if (!config.isLockEnabled()) {
+            throw new BadRequestException("Device lock actions are not enabled for this tenant");
+        }
+
+        processAutoLockActivation(config, application, application.getFineractLoanId(), DeviceControlTriggerType.MANUAL, "manual-replay", actor);
+        return new DeviceControlDtos.ReplayAutoLockResponse(
+                "Auto-lock replay completed",
+                getApplicationAutoLockState(tenantId, applicationId));
     }
 
     @Transactional(readOnly = true)
@@ -409,6 +510,20 @@ public class DeviceControlCollectionsService {
             return;
         }
         throw new BadRequestException("Only lock retries are supported at the moment");
+    }
+
+    private void processAutoLockActivation(
+            TenantDeviceControlConfig config,
+            LoanRequestApplication application,
+            String fineractLoanId,
+            DeviceControlTriggerType triggerType,
+            String triggerReference,
+            String actor) {
+        LoanDeviceControlState state = ensureState(application);
+        Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
+        FineractGateway.LoanCollectionsSnapshot snapshot = fineractGateway.fetchLoanCollectionsSnapshot(tenant, fineractLoanId);
+        applySnapshot(state, snapshot);
+        activateAutoLockIfEligible(config, application, state, snapshot.nextDueDate(), triggerType, triggerReference, actor);
     }
 
     private void runOverdueAndPredueSweep(String tenantId, boolean includeLocks, boolean includePreDue) {

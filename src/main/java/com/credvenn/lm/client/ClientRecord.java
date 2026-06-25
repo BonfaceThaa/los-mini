@@ -25,6 +25,9 @@ public class ClientRecord extends AuditableEntity {
     @Column(name = "fineract_client_id", nullable = false, length = 100)
     private String fineractClientId;
 
+    @Column(name = "national_id", length = 100)
+    private String nationalId;
+
     @Column(name = "account_no", length = 100)
     private String accountNo;
 
@@ -69,6 +72,8 @@ public class ClientRecord extends AuditableEntity {
     public void setApplicationId(String applicationId) { this.applicationId = applicationId; }
     public String getFineractClientId() { return fineractClientId; }
     public void setFineractClientId(String fineractClientId) { this.fineractClientId = fineractClientId; }
+    public String getNationalId() { return nationalId; }
+    public void setNationalId(String nationalId) { this.nationalId = nationalId; }
     public String getAccountNo() { return accountNo; }
     public void setAccountNo(String accountNo) { this.accountNo = accountNo; }
     public String getExternalId() { return externalId; }
