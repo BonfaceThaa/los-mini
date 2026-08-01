@@ -23,5 +23,6 @@ public enum ApplicationStatus {
     DEVICE_ASSIGNMENT_FAILED,
     DEVICE_ASSIGNED,
     FINERACT_LOAN_ACTIVATED,
+    LOAN_CLOSED,
     REJECTED
 }

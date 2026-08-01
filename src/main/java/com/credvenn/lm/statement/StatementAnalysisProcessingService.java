@@ -28,6 +28,7 @@ public class StatementAnalysisProcessingService {
     private final DocumentService documentService;
     private final SubscriptionBillingService subscriptionBillingService;
     private final CladfyStatusPollingService cladfyStatusPollingService;
+    private final StatementReviewService statementReviewService;
 
     public StatementAnalysisProcessingService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -35,13 +36,15 @@ public class StatementAnalysisProcessingService {
             ApplicationService applicationService,
             DocumentService documentService,
             SubscriptionBillingService subscriptionBillingService,
-            CladfyStatusPollingService cladfyStatusPollingService) {
+            CladfyStatusPollingService cladfyStatusPollingService,
+            StatementReviewService statementReviewService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
         this.documentService = documentService;
         this.subscriptionBillingService = subscriptionBillingService;
         this.cladfyStatusPollingService = cladfyStatusPollingService;
+        this.statementReviewService = statementReviewService;
     }
 
     @Async
@@ -148,6 +151,8 @@ public class StatementAnalysisProcessingService {
         analysis.setLastStatusCheckAt(Instant.now());
         analysis.setCompletionSource(completionSource);
         analysis.setCompletedAt(Instant.now());
+        statementAnalysisRepository.save(analysis);
+        recordSystemOutcome(tenantId, applicationId, analysis, actor, decision.status(), decision.summary());
         log.info(
                 "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
                 decision.status(),
@@ -161,6 +166,32 @@ public class StatementAnalysisProcessingService {
         } else {
             applicationService.handleStatementFailed(tenantId, applicationId, actor, "Statement analysis failed");
         }
+    }
+
+    private void recordSystemOutcome(
+            String tenantId,
+            String applicationId,
+            StatementAnalysis analysis,
+            String actor,
+            StatementAnalysisStatus status,
+            String reason) {
+        statementReviewService.recordDecision(
+                tenantId,
+                applicationId,
+                analysis.getId(),
+                toReviewDecision(status),
+                StatementReviewSource.SYSTEM,
+                actor,
+                reason);
+    }
+
+    private StatementReviewDecision toReviewDecision(StatementAnalysisStatus status) {
+        return switch (status) {
+            case PASSED -> StatementReviewDecision.APPROVED;
+            case FAILED -> StatementReviewDecision.REJECTED;
+            case MANUAL_REVIEW_REQUIRED -> StatementReviewDecision.MANUAL_REVIEW_REQUIRED;
+            case PENDING, IN_PROGRESS -> throw new IllegalArgumentException("Cannot record review decision for non-final status " + status);
+        };
     }
 
     private StatementAnalysisProvider.StatementDecision simulatedDecision(String simulateOutcome) {

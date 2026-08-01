@@ -1,5 +1,6 @@
 package com.credvenn.lm.payment;
 
+import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
@@ -38,6 +39,7 @@ public class MpesaPaymentProcessor {
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
     private final ApplicationEventPublisher eventPublisher;
+    private final ApplicationService applicationService;
 
     public MpesaPaymentProcessor(
             MpesaPaymentReceiptRepository receiptRepository,
@@ -45,13 +47,15 @@ public class MpesaPaymentProcessor {
             LoanRequestApplicationRepository applicationRepository,
             TenantService tenantService,
             FineractGateway fineractGateway,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ApplicationService applicationService) {
         this.receiptRepository = receiptRepository;
         this.channelRepository = channelRepository;
         this.applicationRepository = applicationRepository;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
         this.eventPublisher = eventPublisher;
+        this.applicationService = applicationService;
     }
 
     @Async
@@ -130,6 +134,15 @@ public class MpesaPaymentProcessor {
                     application.getId(),
                     application.getFineractLoanId(),
                     receipt.getId()));
+            LoanSummary updatedSummary = fineractGateway.getLoanSummary(tenant, application.getFineractLoanId());
+            if (!updatedSummary.active()) {
+                applicationService.markLoanClosed(
+                        tenant.getId(),
+                        application.getId(),
+                        "system",
+                        "Loan fully repaid and closed in Fineract");
+                log.info("Marked application loan as closed after repayment fineractLoanId={}", application.getFineractLoanId());
+            }
         } catch (Exception ex) {
             receipt.setProcessingStatus(MpesaPaymentProcessingStatus.FAILED);
             receipt.setFailureReason(ex.getMessage());

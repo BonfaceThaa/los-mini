@@ -51,7 +51,15 @@ class StatementAnalysisProcessingServiceTest {
 
         verify(context.cladfyStatusPollingService, never()).scheduleInitialStatusCheck(any());
         verify(context.applicationService).handleStatementPassed("tenant-1", "app-1", "system");
-        verify(context.statementAnalysisRepository).save(any(StatementAnalysis.class));
+        verify(context.statementReviewService).recordDecision(
+                eq("tenant-1"),
+                eq("app-1"),
+                any(),
+                eq(StatementReviewDecision.APPROVED),
+                eq(StatementReviewSource.SYSTEM),
+                eq("system"),
+                eq("Cladfy reused existing scoring score=743 riskTier=Good"));
+        verify(context.statementAnalysisRepository, org.mockito.Mockito.times(2)).save(any(StatementAnalysis.class));
     }
 
     @Test
@@ -81,6 +89,7 @@ class StatementAnalysisProcessingServiceTest {
         context.service.process("tenant-1", "app-1", "doc-1", "system", null);
 
         verify(context.cladfyStatusPollingService).scheduleInitialStatusCheck(any(StatementAnalysis.class));
+        verify(context.statementReviewService, never()).recordDecision(any(), any(), any(), any(), any(), any(), any());
         verify(context.applicationService, never()).handleStatementPassed(any(), any(), any());
         verify(context.applicationService, never()).handleStatementManualReview(any(), any(), any(), any());
         verify(context.applicationService, never()).handleStatementFailed(any(), any(), any(), any());
@@ -140,6 +149,7 @@ class StatementAnalysisProcessingServiceTest {
         private final DocumentService documentService = mock(DocumentService.class);
         private final SubscriptionBillingService subscriptionBillingService = mock(SubscriptionBillingService.class);
         private final CladfyStatusPollingService cladfyStatusPollingService = mock(CladfyStatusPollingService.class);
+        private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
         private final CladfyGateway cladfyGateway = mock(CladfyGateway.class);
         private final CladfyStatementAnalysisProvider provider = new CladfyStatementAnalysisProvider(cladfyGateway);
         private final StatementAnalysisProcessingService service = new StatementAnalysisProcessingService(
@@ -148,6 +158,7 @@ class StatementAnalysisProcessingServiceTest {
                 applicationService,
                 documentService,
                 subscriptionBillingService,
-                cladfyStatusPollingService);
+                cladfyStatusPollingService,
+                statementReviewService);
     }
 }

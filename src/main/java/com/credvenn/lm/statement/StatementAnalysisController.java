@@ -32,7 +32,7 @@ public class StatementAnalysisController {
     @PostMapping("/run")
     @PreAuthorize("hasAuthority('CREDIT_CHECK_RUN')")
     @Operation(summary = "Run statement analysis asynchronously")
-    public ResponseEntity<StatementDtos.StatementAnalysisResponse> run(
+    public ResponseEntity<StatementDtos.StatementAssessmentResponse> run(
             @PathVariable String applicationId,
             @RequestParam("documentId") String documentId,
             @RequestParam(value = "simulateOutcome", required = false) String simulateOutcome) {
@@ -47,8 +47,8 @@ public class StatementAnalysisController {
 
     @PostMapping("/manual-pass")
     @PreAuthorize("hasAuthority('CREDIT_MANUAL_APPROVE')")
-    @Operation(summary = "Manually pass statement analysis without an uploaded document")
-    public ResponseEntity<StatementDtos.StatementAnalysisResponse> manualPass(
+    @Operation(summary = "Manually pass statement analysis without overwriting provider results")
+    public ResponseEntity<StatementDtos.StatementAssessmentResponse> manualPass(
             @PathVariable String applicationId,
             @Valid @RequestBody StatementDtos.ManualStatementPassRequest request) {
         var actor = currentActorService.requireCurrentUser();
@@ -61,8 +61,8 @@ public class StatementAnalysisController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('CREDIT_CHECK_VIEW')")
-    @Operation(summary = "Get the latest statement analysis result")
-    public ResponseEntity<StatementDtos.StatementAnalysisResponse> get(@PathVariable String applicationId) {
+    @Operation(summary = "Get the latest provider statement analysis plus any review decision")
+    public ResponseEntity<StatementDtos.StatementAssessmentResponse> get(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(statementAnalysisService.get(actor.tenantId(), applicationId));
     }

@@ -19,6 +19,7 @@ public class CladfyAnalysisCompletionService {
     private final CladfyStatementAnalysisProvider provider;
     private final ApplicationService applicationService;
     private final SubscriptionBillingService subscriptionBillingService;
+    private final StatementReviewService statementReviewService;
 
     public CladfyAnalysisCompletionService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -26,13 +27,15 @@ public class CladfyAnalysisCompletionService {
             CladfyGateway cladfyGateway,
             CladfyStatementAnalysisProvider provider,
             ApplicationService applicationService,
-            SubscriptionBillingService subscriptionBillingService) {
+            SubscriptionBillingService subscriptionBillingService,
+            StatementReviewService statementReviewService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.transactionRepository = transactionRepository;
         this.cladfyGateway = cladfyGateway;
         this.provider = provider;
         this.applicationService = applicationService;
         this.subscriptionBillingService = subscriptionBillingService;
+        this.statementReviewService = statementReviewService;
     }
 
     @Transactional
@@ -80,6 +83,7 @@ public class CladfyAnalysisCompletionService {
             }
         }
         statementAnalysisRepository.save(analysis);
+        recordSystemDecision(analysis, actor, decision.status(), decision.summary());
 
         applyApplicationOutcome(analysis, actor, decision.status(), "Cladfy score requires manual review", "Cladfy score failed statement analysis");
         log.info(
@@ -117,6 +121,7 @@ public class CladfyAnalysisCompletionService {
         analysis.setRawProviderResponse("documentStatus=%s fetchedAt=%s".formatted(statusResponse, Instant.now()));
         markCompleted(analysis, completionSource);
         statementAnalysisRepository.save(analysis);
+        recordSystemDecision(analysis, actor, StatementAnalysisStatus.FAILED, analysis.getSummary());
 
         applicationService.handleStatementFailed(
                 analysis.getTenantId(),
@@ -132,6 +137,30 @@ public class CladfyAnalysisCompletionService {
                 statusResponse == null ? null : statusResponse.fail_reason(),
                 completionSource);
         return true;
+    }
+
+    private void recordSystemDecision(
+            StatementAnalysis analysis,
+            String actor,
+            StatementAnalysisStatus status,
+            String reason) {
+        statementReviewService.recordDecision(
+                analysis.getTenantId(),
+                analysis.getApplicationId(),
+                analysis.getId(),
+                toReviewDecision(status),
+                StatementReviewSource.SYSTEM,
+                actor,
+                reason);
+    }
+
+    private StatementReviewDecision toReviewDecision(StatementAnalysisStatus status) {
+        return switch (status) {
+            case PASSED -> StatementReviewDecision.APPROVED;
+            case FAILED -> StatementReviewDecision.REJECTED;
+            case MANUAL_REVIEW_REQUIRED -> StatementReviewDecision.MANUAL_REVIEW_REQUIRED;
+            case PENDING, IN_PROGRESS -> throw new IllegalArgumentException("Cannot record review decision for non-final status " + status);
+        };
     }
 
     private void markCompleted(StatementAnalysis analysis, String completionSource) {

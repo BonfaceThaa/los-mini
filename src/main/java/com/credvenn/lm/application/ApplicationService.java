@@ -318,6 +318,17 @@ public class ApplicationService {
     }
 
     @Transactional
+    public void markLoanClosed(String tenantId, String applicationId, String actor, String reason) {
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
+            LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (application.getStatus() == ApplicationStatus.LOAN_CLOSED) {
+                return;
+            }
+            changeStatus(application, ApplicationStatus.LOAN_CLOSED, actor, reason);
+        }
+    }
+
+    @Transactional
     public void markKycInProgress(String tenantId, String applicationId, String actor) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);

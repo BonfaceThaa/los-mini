@@ -299,6 +299,27 @@ class ApplicationServiceTest {
         verify(context.fineractGateway, never()).activateLoan(any(Tenant.class), any(LoanRequestApplication.class));
     }
 
+    @Test
+    void markLoanClosedTransitionsApplicationToLoanClosed() {
+        TestContext context = new TestContext();
+        LoanRequestApplication application = new LoanRequestApplication();
+        setId(application, "app-3");
+        application.setTenantId("tenant-1");
+        application.setStatus(ApplicationStatus.FINERACT_LOAN_ACTIVATED);
+        application.setFineractLoanId("loan-44");
+
+        when(context.applicationRepository.findByIdAndTenantId("app-3", "tenant-1")).thenReturn(Optional.of(application));
+        when(context.statusHistoryRepository.save(any(ApplicationStatusHistory.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        context.service.markLoanClosed("tenant-1", "app-3", "system", "Loan fully repaid in Fineract");
+
+        assertEquals(ApplicationStatus.LOAN_CLOSED, application.getStatus());
+        ArgumentCaptor<ApplicationStatusHistory> historyCaptor = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+        verify(context.statusHistoryRepository).save(historyCaptor.capture());
+        assertEquals("FINERACT_LOAN_ACTIVATED", historyCaptor.getValue().getFromStatus());
+        assertEquals("LOAN_CLOSED", historyCaptor.getValue().getToStatus());
+    }
+
     private static void setId(LoanRequestApplication application, String id) {
         try {
             var field = LoanRequestApplication.class.getDeclaredField("id");

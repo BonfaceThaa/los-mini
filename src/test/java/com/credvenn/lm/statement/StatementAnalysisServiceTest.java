@@ -1,0 +1,172 @@
+package com.credvenn.lm.statement;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.credvenn.lm.application.ApplicationService;
+import com.credvenn.lm.application.LoanRequestApplication;
+import com.credvenn.lm.document.DocumentService;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
+
+class StatementAnalysisServiceTest {
+
+    @Test
+    void manualPassPreservesProviderAnalysisAndAddsSeparateReview() {
+        TestContext context = new TestContext();
+        LoanRequestApplication application = new LoanRequestApplication();
+        StatementAnalysis failedAnalysis = analysis("analysis-1", StatementAnalysisStatus.FAILED, "CLADFY", Instant.parse("2026-07-02T09:00:00Z"));
+        StatementReview review = review(
+                "review-1",
+                "tenant-1",
+                "app-1",
+                "analysis-1",
+                StatementReviewDecision.APPROVED,
+                StatementReviewSource.USER,
+                "approved after branch review",
+                "officer",
+                Instant.parse("2026-07-02T10:00:00Z"));
+
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
+        when(context.statementAnalysisRepository.existsByApplicationIdAndStatusIn(anyString(), any())).thenReturn(false);
+        when(context.statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc("app-1")).thenReturn(List.of(failedAnalysis));
+        when(context.statementReviewService.recordDecision(
+                "tenant-1",
+                "app-1",
+                "analysis-1",
+                StatementReviewDecision.APPROVED,
+                StatementReviewSource.USER,
+                "officer",
+                "approved after branch review")).thenReturn(review);
+        when(context.statementReviewService.getLatestForAnalysis("analysis-1")).thenReturn(Optional.of(review));
+        when(context.transactionRepository.findAllByStatementAnalysisIdOrderByCreatedAtAsc("analysis-1")).thenReturn(List.of());
+        doNothing().when(context.applicationService).handleStatementPassed("tenant-1", "app-1", "officer");
+
+        StatementDtos.StatementAssessmentResponse response = context.service.manualPass(
+                "tenant-1",
+                "app-1",
+                "officer",
+                new StatementDtos.ManualStatementPassRequest("approved after branch review"));
+
+        assertNotNull(response.analysis());
+        assertEquals("analysis-1", response.analysis().id());
+        assertEquals(StatementAnalysisStatus.FAILED, response.analysis().status());
+        assertNotNull(response.review());
+        assertEquals(StatementReviewDecision.APPROVED, response.review().decision());
+        assertEquals(StatementEffectiveOutcome.APPROVED, response.effectiveOutcome());
+        verify(context.statementAnalysisRepository, never()).save(any(StatementAnalysis.class));
+        verify(context.applicationService).handleStatementPassed("tenant-1", "app-1", "officer");
+    }
+
+    @Test
+    void getReturnsReviewOnlyWhenManualApprovalExistsWithoutProviderAnalysis() {
+        TestContext context = new TestContext();
+        LoanRequestApplication application = new LoanRequestApplication();
+        StatementReview review = review(
+                "review-2",
+                "tenant-1",
+                "app-2",
+                null,
+                StatementReviewDecision.APPROVED,
+                StatementReviewSource.USER,
+                "approved without uploaded statement",
+                "officer",
+                Instant.parse("2026-07-02T11:00:00Z"));
+
+        when(context.applicationService.getRequired("tenant-1", "app-2")).thenReturn(application);
+        when(context.statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc("app-2")).thenReturn(List.of());
+        when(context.statementReviewService.getLatestForApplication("app-2")).thenReturn(Optional.of(review));
+
+        StatementDtos.StatementAssessmentResponse response = context.service.get("tenant-1", "app-2");
+
+        assertNull(response.analysis());
+        assertNotNull(response.review());
+        assertEquals("review-2", response.review().id());
+        assertEquals(StatementEffectiveOutcome.APPROVED, response.effectiveOutcome());
+    }
+
+    private static StatementAnalysis analysis(String id, StatementAnalysisStatus status, String provider, Instant createdAt) {
+        StatementAnalysis analysis = new StatementAnalysis();
+        setField(analysis, StatementAnalysis.class, "id", id);
+        setField(analysis, StatementAnalysis.class, "provider", provider);
+        setField(analysis, StatementAnalysis.class, "status", status);
+        setField(analysis, StatementAnalysis.class, "applicationId", "app-1");
+        setField(analysis, StatementAnalysis.class, "tenantId", "tenant-1");
+        setAuditField(analysis, "createdAt", createdAt);
+        setAuditField(analysis, "updatedAt", createdAt);
+        return analysis;
+    }
+
+    private static StatementReview review(
+            String id,
+            String tenantId,
+            String applicationId,
+            String analysisId,
+            StatementReviewDecision decision,
+            StatementReviewSource source,
+            String reason,
+            String reviewedBy,
+            Instant reviewedAt) {
+        StatementReview review = new StatementReview();
+        setField(review, StatementReview.class, "id", id);
+        setField(review, StatementReview.class, "tenantId", tenantId);
+        setField(review, StatementReview.class, "applicationId", applicationId);
+        setField(review, StatementReview.class, "statementAnalysisId", analysisId);
+        setField(review, StatementReview.class, "decision", decision);
+        setField(review, StatementReview.class, "decisionSource", source);
+        setField(review, StatementReview.class, "reason", reason);
+        setField(review, StatementReview.class, "reviewedBy", reviewedBy);
+        setField(review, StatementReview.class, "reviewedAt", reviewedAt);
+        setAuditField(review, "createdAt", reviewedAt);
+        setAuditField(review, "updatedAt", reviewedAt);
+        return review;
+    }
+
+    private static void setAuditField(Object target, String fieldName, Object value) {
+        try {
+            var field = target.getClass().getSuperclass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private static void setField(Object target, Class<?> type, String fieldName, Object value) {
+        try {
+            var field = type.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    private static final class TestContext {
+        private final StatementAnalysisRepository statementAnalysisRepository = mock(StatementAnalysisRepository.class);
+        private final StatementAnalysisProcessingService processingService = mock(StatementAnalysisProcessingService.class);
+        private final StatementProviderRegistry statementProviderRegistry = mock(StatementProviderRegistry.class);
+        private final ApplicationService applicationService = mock(ApplicationService.class);
+        private final DocumentService documentService = mock(DocumentService.class);
+        private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
+        private final CladfyStatementTransactionRepository transactionRepository = mock(CladfyStatementTransactionRepository.class);
+        private final StatementAnalysisService service = new StatementAnalysisService(
+                statementAnalysisRepository,
+                processingService,
+                statementProviderRegistry,
+                applicationService,
+                documentService,
+                statementReviewService,
+                transactionRepository);
+    }
+}
