@@ -36,3 +36,5 @@ build/
 .vscode/
 
 data
+.env
+alpha-docs/

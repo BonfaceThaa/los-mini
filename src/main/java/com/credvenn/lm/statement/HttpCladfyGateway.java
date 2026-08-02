@@ -113,7 +113,7 @@ public class HttpCladfyGateway implements CladfyGateway {
                     upload.client() == null || upload.client().scoring() == null ? null : upload.client().scoring().score(),
                     upload.client() == null || upload.client().scoring() == null || upload.client().scoring().risk_tier() == null
                             ? null
-                            : upload.client().scoring().risk_tier().tier(),
+                            : upload.client().scoring().risk_tier().risk(),
                     resolveUploadScoredAt(upload));
         } catch (IOException ex) {
             throw new BadRequestException("Unable to read stored statement document");
@@ -176,7 +176,7 @@ public class HttpCladfyGateway implements CladfyGateway {
                 "Cladfy credit score response clientId={} score={} riskTier={} scoredAt={}",
                 clientId,
                 response == null ? null : response.score(),
-                response == null || response.risk_tier() == null ? null : response.risk_tier().tier(),
+                response == null || response.risk_tier() == null ? null : response.risk_tier().risk(),
                 response == null ? null : response.scored_at());
         return response;
     }
@@ -374,3 +374,5 @@ public class HttpCladfyGateway implements CladfyGateway {
         return null;
     }
 }
+
+

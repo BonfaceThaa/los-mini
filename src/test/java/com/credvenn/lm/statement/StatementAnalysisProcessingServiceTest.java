@@ -1,10 +1,6 @@
 package com.credvenn.lm.statement;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -22,11 +18,10 @@ import org.junit.jupiter.api.Test;
 class StatementAnalysisProcessingServiceTest {
 
     @Test
-    void processCompletesImmediatelyWhenUploadScoringIsFresh() {
+    void processSchedulesPollingWhenUploadScoringIsFresh() {
         TestContext context = new TestContext();
         ApplicationDocument document = document("doc-1");
         LoanRequestApplication application = application("tenant-1", "app-1");
-        StatementAnalysis analysis = new StatementAnalysis();
 
         when(context.statementProviderRegistry.currentProvider()).thenReturn(context.provider);
         when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
@@ -45,20 +40,14 @@ class StatementAnalysisProcessingServiceTest {
                 743,
                 "Good",
                 Instant.now().minusSeconds(60)));
-        doNothing().when(context.applicationService).handleStatementPassed("tenant-1", "app-1", "system");
 
         context.service.process("tenant-1", "app-1", "doc-1", "system", null);
 
-        verify(context.cladfyStatusPollingService, never()).scheduleInitialStatusCheck(any());
-        verify(context.applicationService).handleStatementPassed("tenant-1", "app-1", "system");
-        verify(context.statementReviewService).recordDecision(
-                eq("tenant-1"),
-                eq("app-1"),
-                any(),
-                eq(StatementReviewDecision.APPROVED),
-                eq(StatementReviewSource.SYSTEM),
-                eq("system"),
-                eq("Cladfy reused existing scoring score=743 riskTier=Good"));
+        verify(context.cladfyStatusPollingService).scheduleInitialStatusCheck(any(StatementAnalysis.class));
+        verify(context.statementReviewService, never()).recordDecision(any(), any(), any(), any(), any(), any(), any());
+        verify(context.applicationService, never()).handleStatementPassed(any(), any(), any());
+        verify(context.applicationService, never()).handleStatementManualReview(any(), any(), any(), any());
+        verify(context.applicationService, never()).handleStatementFailed(any(), any(), any(), any());
         verify(context.statementAnalysisRepository, org.mockito.Mockito.times(2)).save(any(StatementAnalysis.class));
     }
 

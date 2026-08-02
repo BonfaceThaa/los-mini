@@ -63,7 +63,7 @@ public class CladfyAnalysisCompletionService {
         analysis.setRecommendation(decision.recommendation());
         analysis.setSummary(decision.summary());
         analysis.setCreditScore(score == null ? null : score.score());
-        analysis.setRiskTier(score == null || score.risk_tier() == null ? null : score.risk_tier().tier());
+        analysis.setRiskTier(score == null || score.risk_tier() == null ? null : score.risk_tier().risk());
         analysis.setRawProviderResponse("analysisResults=%s score=%s fetchedAt=%s".formatted(results, score, Instant.now()));
         markCompleted(analysis, completionSource);
 
@@ -186,3 +186,5 @@ public class CladfyAnalysisCompletionService {
         }
     }
 }
+
+

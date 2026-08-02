@@ -1,123 +1,112 @@
 server:
-    port: 8082
+    port: ${SERVER_PORT}
 spring:
   application:
       name: lm
+  config:
+    import: optional:file:.env[.properties]
   datasource:
-    url: jdbc:mariadb://localhost:3306/los_min_db
-    driver-class-name: org.mariadb.jdbc.Driver
-    username: los_min_user
-    password: L0$_m1n_u$3r
+    url: ${SPRING_DATASOURCE_URL}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: validate
-    database-platform: org.hibernate.dialect.MariaDBDialect
-    show-sql: false
-    open-in-view: false
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO}
+    database-platform: ${SPRING_JPA_DATABASE_PLATFORM}
+    show-sql: ${SPRING_JPA_SHOW_SQL}
+    open-in-view: ${SPRING_JPA_OPEN_IN_VIEW}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL}
   flyway:
-    enabled: true
+    enabled: ${SPRING_FLYWAY_ENABLED}
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE}
+      max-request-size: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE}
 
 springdoc:
   api-docs:
-    path: /api-docs
+    path: ${SPRINGDOC_API_DOCS_PATH}
   swagger-ui:
-    path: /swagger-ui.html
+    path: ${SPRINGDOC_SWAGGER_UI_PATH}
 
 logging:
   level:
-    com.credvenn.lm: INFO
+    com.credvenn.lm: ${LOGGING_LEVEL_COM_CREDVENN_LM}
   pattern:
-    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} [corr=%X{correlationId:-},tenant=%X{tenantId:-},app=%X{applicationId:-},user=%X{userId:-}] - %msg%n"
+    console: ${LOGGING_PATTERN_CONSOLE}
 
 app:
   bootstrap:
     super-admin:
-      username: superadmin
-      email: superadmin@credvenn.com
-      password: ChangeMe123!
+      username: ${APP_BOOTSTRAP_SUPER_ADMIN_USERNAME}
+      email: ${APP_BOOTSTRAP_SUPER_ADMIN_EMAIL}
+      password: ${APP_BOOTSTRAP_SUPER_ADMIN_PASSWORD}
   device-control:
     scheduling:
-      enabled: false
-      tenant-sweeps-enabled: false
-      daily-overdue-locks-enabled: false
-      daily-unlocks-enabled: false
+      enabled: ${APP_DEVICE_CONTROL_SCHEDULING_ENABLED}
+      tenant-sweeps-enabled: ${APP_DEVICE_CONTROL_SCHEDULING_TENANT_SWEEPS_ENABLED}
+      daily-overdue-locks-enabled: ${APP_DEVICE_CONTROL_SCHEDULING_DAILY_OVERDUE_LOCKS_ENABLED}
+      daily-unlocks-enabled: ${APP_DEVICE_CONTROL_SCHEDULING_DAILY_UNLOCKS_ENABLED}
   security:
-    encryption-key: CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+    encryption-key: ${APP_SECURITY_ENCRYPTION_KEY}
     cors:
-      allowed-origins:
-        - "*"
-      allowed-methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-        - OPTIONS
-      allowed-headers:
-        - "*"
-      exposed-headers:
-        - Authorization
-        - Location
-      allow-credentials: false
-      max-age-seconds: 3600
+      allowed-origins: ${APP_SECURITY_CORS_ALLOWED_ORIGINS}
+      allowed-methods: ${APP_SECURITY_CORS_ALLOWED_METHODS:GET,POST,PUT,PATCH,DELETE,OPTIONS}
+      allowed-headers: ${APP_SECURITY_CORS_ALLOWED_HEADERS}
+      exposed-headers: ${APP_SECURITY_CORS_EXPOSED_HEADERS:Authorization,Location}
+      allow-credentials: ${APP_SECURITY_CORS_ALLOW_CREDENTIALS}
+      max-age-seconds: ${APP_SECURITY_CORS_MAX_AGE_SECONDS}
     jwt:
-      secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      issuer: los-be
-      service-secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      service-issuer: los-be-service
-      access-token-expiration-seconds: 900
-      refresh-token-expiration-seconds: 1209600
+      secret: ${APP_SECURITY_JWT_SECRET}
+      issuer: ${APP_SECURITY_JWT_ISSUER}
+      service-secret: ${APP_SECURITY_JWT_SERVICE_SECRET}
+      service-issuer: ${APP_SECURITY_JWT_SERVICE_ISSUER}
+      access-token-expiration-seconds: ${APP_SECURITY_JWT_ACCESS_TOKEN_EXPIRATION_SECONDS}
+      refresh-token-expiration-seconds: ${APP_SECURITY_JWT_REFRESH_TOKEN_EXPIRATION_SECONDS}
   integration:
     kyc:
-      provider: SMILE_ID
+      provider: ${APP_INTEGRATION_KYC_PROVIDER}
       smile-id:
-        base-url: https://api.smileidentity.com
-        partner-id: "8763"
-        api-key: 12f02081-60ab-478b-93e5-0a9233945414
-        signature-api-key: 12f02081-60ab-478b-93e5-0a9233945414
-        source-sdk-version: 1.0.0
+        base-url: ${APP_INTEGRATION_KYC_SMILE_ID_BASE_URL}
+        partner-id: ${APP_INTEGRATION_KYC_SMILE_ID_PARTNER_ID}
+        api-key: ${APP_INTEGRATION_KYC_SMILE_ID_API_KEY}
+        signature-api-key: ${APP_INTEGRATION_KYC_SMILE_ID_SIGNATURE_API_KEY}
+        source-sdk-version: ${APP_INTEGRATION_KYC_SMILE_ID_SOURCE_SDK_VERSION}
     statement:
-      provider: CLADFY
-      auto-trigger-document-types:
-        - MPESA_STATEMENT
-        - BANK_STATEMENT
+      provider: ${APP_INTEGRATION_STATEMENT_PROVIDER}
+      auto-trigger-document-types: ${APP_INTEGRATION_STATEMENT_AUTO_TRIGGER_DOCUMENT_TYPES:MPESA_STATEMENT,BANK_STATEMENT}
       document-type-providers:
-        MPESA_STATEMENT: mpesa
-        BANK_STATEMENT: bank
+        MPESA_STATEMENT: ${APP_INTEGRATION_STATEMENT_DOCUMENT_TYPE_PROVIDERS_MPESA_STATEMENT}
+        BANK_STATEMENT: ${APP_INTEGRATION_STATEMENT_DOCUMENT_TYPE_PROVIDERS_BANK_STATEMENT}
     fineract:
-      base-url: http://localhost:8080/fineract-provider/api/v1
-      username: mifos
-      password: password
-      default-office-id: 1
-      legal-form-id: 1
-      locale: en
-      date-format: dd MMMM yyyy
-      transaction-processing-strategy-code: advanced-payment-allocation-strategy
+      base-url: ${APP_INTEGRATION_FINERACT_BASE_URL}
+      username: ${APP_INTEGRATION_FINERACT_USERNAME}
+      password: ${APP_INTEGRATION_FINERACT_PASSWORD}
+      default-office-id: ${APP_INTEGRATION_FINERACT_DEFAULT_OFFICE_ID}
+      legal-form-id: ${APP_INTEGRATION_FINERACT_LEGAL_FORM_ID}
+      locale: ${APP_INTEGRATION_FINERACT_LOCALE}
+      date-format: ${APP_INTEGRATION_FINERACT_DATE_FORMAT}
+      transaction-processing-strategy-code: ${APP_INTEGRATION_FINERACT_TRANSACTION_PROCESSING_STRATEGY_CODE}
     cladfy:
-      base-url: https://k.yomia.ke/v1
-      api-key: a2e10cdc94a7976c8756b8ea87e69e754d4831b1222cfd93d182bf0f185ad303
-      webhook-base-url: https://api.credvenn.com
+      base-url: ${APP_INTEGRATION_CLADFY_BASE_URL}
+      api-key: ${APP_INTEGRATION_CLADFY_API_KEY}
+      webhook-base-url: ${APP_INTEGRATION_CLADFY_WEBHOOK_BASE_URL}
   document:
     storage:
-      provider: LOCAL
+      provider: ${APP_DOCUMENT_STORAGE_PROVIDER}
       local:
-        root-path: ./data/documents
+        root-path: ${APP_DOCUMENT_STORAGE_LOCAL_ROOT_PATH}
       s3:
-        bucket: CHANGE_ME
-        region: us-east-1
-        prefix: los-documents
-        endpoint:
-        access-key:
-        secret-key:
-        path-style-access-enabled: false
+        bucket: ${APP_DOCUMENT_STORAGE_S3_BUCKET}
+        region: ${APP_DOCUMENT_STORAGE_S3_REGION}
+        prefix: ${APP_DOCUMENT_STORAGE_S3_PREFIX}
+        endpoint: ${APP_DOCUMENT_STORAGE_S3_ENDPOINT:}
+        access-key: ${APP_DOCUMENT_STORAGE_S3_ACCESS_KEY:}
+        secret-key: ${APP_DOCUMENT_STORAGE_S3_SECRET_KEY:}
+        path-style-access-enabled: ${APP_DOCUMENT_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED}
   statement-inbox:
     local:
-      root-path: ./data/inbound-statements
-
+      root-path: ${APP_STATEMENT_INBOX_LOCAL_ROOT_PATH}

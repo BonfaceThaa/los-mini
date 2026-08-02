@@ -35,7 +35,7 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
     }
 
     public StatementDecision toDecision(CladfyDtos.AnalysisResultsResponse analysis, CladfyDtos.CreditScoreResponse score) {
-        String tier = score == null || score.risk_tier() == null ? null : score.risk_tier().tier();
+        String tier = score == null || score.risk_tier() == null ? null : score.risk_tier().risk();
         StatementAnalysisStatus status = mapTierToStatus(tier);
         String recommendation = switch (status) {
             case PASSED -> "APPROVE";
@@ -87,3 +87,5 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
         };
     }
 }
+
+

@@ -7,7 +7,6 @@ import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import org.slf4j.Logger;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class StatementAnalysisProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(StatementAnalysisProcessingService.class);
-    private static final Duration REUSED_UPLOAD_SCORING_MAX_AGE = Duration.ofDays(30);
 
     private final StatementAnalysisRepository statementAnalysisRepository;
     private final StatementProviderRegistry statementProviderRegistry;
@@ -81,31 +79,6 @@ public class StatementAnalysisProcessingService {
                 analysis.setExternalBusinessId(submission.externalBusinessId());
                 analysis.setSummary(submission.summary());
                 analysis.setRawProviderResponse(submission.rawProviderResponse());
-                if (provider instanceof CladfyStatementAnalysisProvider cladfyProvider
-                        && isFreshUploadScoring(submission.uploadScoredAt())
-                        && submission.uploadCreditScore() != null
-                        && submission.uploadRiskTier() != null
-                        && !submission.uploadRiskTier().isBlank()) {
-                    var reusedDecision = cladfyProvider.toDecisionFromUploadScoring(
-                            submission.uploadCreditScore(),
-                            submission.uploadRiskTier());
-                    applyDecision(
-                            tenantId,
-                            applicationId,
-                            actor,
-                            analysis,
-                            reusedDecision,
-                            submission.uploadCreditScore(),
-                            submission.uploadRiskTier(),
-                            "UPLOAD_RESPONSE_REUSE");
-                    log.info(
-                            "Completed statement analysis immediately from fresh upload scoring provider={} externalClientId={} externalDocumentId={} scoredAt={}",
-                            submission.provider(),
-                            submission.externalClientId(),
-                            submission.externalDocumentId(),
-                            submission.uploadScoredAt());
-                    return;
-                }
                 cladfyStatusPollingService.scheduleInitialStatusCheck(analysis);
                 log.info(
                         "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={}",
@@ -232,8 +205,5 @@ public class StatementAnalysisProcessingService {
         String normalized = simulateOutcome.trim().toUpperCase(Locale.ROOT);
         return normalized.isBlank() ? null : normalized;
     }
-
-    private boolean isFreshUploadScoring(Instant scoredAt) {
-        return scoredAt != null && !scoredAt.isBefore(Instant.now().minus(REUSED_UPLOAD_SCORING_MAX_AGE));
-    }
 }
+
