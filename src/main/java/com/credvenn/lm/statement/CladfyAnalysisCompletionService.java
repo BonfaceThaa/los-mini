@@ -2,7 +2,11 @@ package com.credvenn.lm.statement;
 
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,6 +24,7 @@ public class CladfyAnalysisCompletionService {
     private final ApplicationService applicationService;
     private final SubscriptionBillingService subscriptionBillingService;
     private final StatementReviewService statementReviewService;
+    private final ObjectMapper objectMapper;
 
     public CladfyAnalysisCompletionService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -28,7 +33,8 @@ public class CladfyAnalysisCompletionService {
             CladfyStatementAnalysisProvider provider,
             ApplicationService applicationService,
             SubscriptionBillingService subscriptionBillingService,
-            StatementReviewService statementReviewService) {
+            StatementReviewService statementReviewService,
+            ObjectMapper objectMapper) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.transactionRepository = transactionRepository;
         this.cladfyGateway = cladfyGateway;
@@ -36,6 +42,7 @@ public class CladfyAnalysisCompletionService {
         this.applicationService = applicationService;
         this.subscriptionBillingService = subscriptionBillingService;
         this.statementReviewService = statementReviewService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -64,7 +71,7 @@ public class CladfyAnalysisCompletionService {
         analysis.setSummary(decision.summary());
         analysis.setCreditScore(score == null ? null : score.score());
         analysis.setRiskTier(score == null || score.risk_tier() == null ? null : score.risk_tier().risk());
-        analysis.setRawProviderResponse("analysisResults=%s score=%s fetchedAt=%s".formatted(results, score, Instant.now()));
+        analysis.setRawProviderResponse(buildStoredAnalysisResponse(results));
         markCompleted(analysis, completionSource);
 
         transactionRepository.deleteAllByStatementAnalysisId(analysis.getId());
@@ -185,6 +192,49 @@ public class CladfyAnalysisCompletionService {
             applicationService.handleStatementFailed(analysis.getTenantId(), analysis.getApplicationId(), actor, failedReason);
         }
     }
+
+    private String buildStoredAnalysisResponse(CladfyDtos.AnalysisResultsResponse results) {
+        try {
+            return objectMapper.writeValueAsString(new StoredAnalysisResponse(
+                    results == null || results.document() == null ? null : results.document().last_analyzed_on(),
+                    results == null || results.summary() == null ? null : results.summary().total_in(),
+                    results == null || results.summary() == null ? null : results.summary().total_out(),
+                    summarizeLoans(results == null ? null : results.loans())));
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Unable to serialize filtered Cladfy analysis response", ex);
+        }
+    }
+
+    private List<StoredLoanSummary> summarizeLoans(CladfyDtos.Loans loans) {
+        if (loans == null || loans.summary() == null) {
+            return List.of();
+        }
+        return loans.summary().stream()
+                .map(loan -> new StoredLoanSummary(
+                        loan.lender(),
+                        loan.amount_borrowed(),
+                        loan.amount_repaid(),
+                        loan.times_taken(),
+                        loan.times_repaid(),
+                        loan.status(),
+                        loan.last_activity_date()))
+                .toList();
+    }
+
+    private record StoredAnalysisResponse(
+            String last_analyzed_on,
+            BigDecimal total_in,
+            BigDecimal total_out,
+            List<StoredLoanSummary> loans) {
+    }
+
+    private record StoredLoanSummary(
+            String lender,
+            BigDecimal amount_borrowed,
+            BigDecimal amount_repaid,
+            Integer times_taken,
+            Integer times_repaid,
+            String status,
+            String last_activity_date) {
+    }
 }
-
-

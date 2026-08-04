@@ -98,7 +98,7 @@ public final class CladfyDtos {
             List<Transaction> transactions,
             Object cashflow,
             Object spending,
-            Object loans) {
+            Loans loans) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -124,6 +124,31 @@ public final class CladfyDtos {
             BigDecimal total_out,
             Integer transaction_count,
             BigDecimal zero_balance_rate_percentage) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Loans(
+            List<LoanSummary> summary,
+            LoanAggregate aggregate) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record LoanSummary(
+            String lender,
+            BigDecimal amount_borrowed,
+            BigDecimal amount_repaid,
+            Integer times_taken,
+            Integer times_repaid,
+            String status,
+            String last_activity_date) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record LoanAggregate(
+            Integer number_of_loans,
+            BigDecimal amount_borrowed,
+            BigDecimal amount_repaid,
+            Integer lenders) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -5,6 +5,8 @@ import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.document.DocumentService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -27,6 +29,7 @@ public class StatementAnalysisService {
     private final DocumentService documentService;
     private final StatementReviewService statementReviewService;
     private final CladfyStatementTransactionRepository cladfyStatementTransactionRepository;
+    private final ObjectMapper objectMapper;
 
     public StatementAnalysisService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -35,7 +38,8 @@ public class StatementAnalysisService {
             ApplicationService applicationService,
             DocumentService documentService,
             StatementReviewService statementReviewService,
-            CladfyStatementTransactionRepository cladfyStatementTransactionRepository) {
+            CladfyStatementTransactionRepository cladfyStatementTransactionRepository,
+            ObjectMapper objectMapper) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.processingService = processingService;
         this.statementProviderRegistry = statementProviderRegistry;
@@ -43,6 +47,7 @@ public class StatementAnalysisService {
         this.documentService = documentService;
         this.statementReviewService = statementReviewService;
         this.cladfyStatementTransactionRepository = cladfyStatementTransactionRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -156,8 +161,19 @@ public class StatementAnalysisService {
         return statementReviewService.getLatestForApplication(applicationId);
     }
 
+    StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(StatementAnalysis analysis) {
+        StoredAnalysisResponse storedResponse = parseStoredAnalysisResponse(analysis.getRawProviderResponse()).orElse(null);
+        return toAnalysisResponse(
+                analysis,
+                storedResponse,
+                cladfyStatementTransactionRepository.findAllByStatementAnalysisIdOrderByCreatedAtAsc(analysis.getId()).stream()
+                        .map(StatementAnalysisService::toTransactionResponse)
+                        .toList());
+    }
+
     static StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(
             StatementAnalysis analysis,
+            StoredAnalysisResponse storedResponse,
             List<StatementDtos.StatementTransactionResponse> transactions) {
         return new StatementDtos.StatementProviderAnalysisResponse(
                 analysis.getId(),
@@ -172,17 +188,40 @@ public class StatementAnalysisService {
                 analysis.getRiskTier(),
                 analysis.getRecommendation(),
                 analysis.getSummary(),
+                storedResponse == null ? null : storedResponse.last_analyzed_on(),
+                storedResponse == null ? null : storedResponse.total_in(),
+                storedResponse == null ? null : storedResponse.total_out(),
+                toLoanSummaryResponses(storedResponse),
                 transactions,
                 analysis.getCreatedAt(),
                 analysis.getUpdatedAt());
     }
 
-    private StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(StatementAnalysis analysis) {
-        return toAnalysisResponse(
-                analysis,
-                cladfyStatementTransactionRepository.findAllByStatementAnalysisIdOrderByCreatedAtAsc(analysis.getId()).stream()
-                        .map(StatementAnalysisService::toTransactionResponse)
-                        .toList());
+    private Optional<StoredAnalysisResponse> parseStoredAnalysisResponse(String rawProviderResponse) {
+        if (rawProviderResponse == null || rawProviderResponse.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(objectMapper.readValue(rawProviderResponse, StoredAnalysisResponse.class));
+        } catch (JsonProcessingException ex) {
+            return Optional.empty();
+        }
+    }
+
+    private static List<StatementDtos.StatementLoanSummaryResponse> toLoanSummaryResponses(StoredAnalysisResponse storedResponse) {
+        if (storedResponse == null || storedResponse.loans() == null) {
+            return List.of();
+        }
+        return storedResponse.loans().stream()
+                .map(loan -> new StatementDtos.StatementLoanSummaryResponse(
+                        loan.lender(),
+                        loan.amount_borrowed(),
+                        loan.amount_repaid(),
+                        loan.times_taken(),
+                        loan.times_repaid(),
+                        loan.status(),
+                        loan.last_activity_date()))
+                .toList();
     }
 
     static StatementDtos.StatementReviewResponse toReviewResponse(StatementReview review) {
@@ -252,5 +291,22 @@ public class StatementAnalysisService {
 
     private boolean requiresStatementOtp() {
         return "CLADFY".equalsIgnoreCase(statementProviderRegistry.currentProvider().providerCode());
+    }
+
+    record StoredAnalysisResponse(
+            String last_analyzed_on,
+            java.math.BigDecimal total_in,
+            java.math.BigDecimal total_out,
+            List<StoredLoanSummary> loans) {
+    }
+
+    record StoredLoanSummary(
+            String lender,
+            java.math.BigDecimal amount_borrowed,
+            java.math.BigDecimal amount_repaid,
+            Integer times_taken,
+            Integer times_repaid,
+            String status,
+            String last_activity_date) {
     }
 }

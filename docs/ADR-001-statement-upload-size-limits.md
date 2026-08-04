@@ -1,3 +1,9 @@
+# ADRs
+
+## Table Of Contents
+1. [ADR-001: Increase Statement Upload Size Limits in Nginx and Spring Boot](#adr-001-increase-statement-upload-size-limits-in-nginx-and-spring-boot)
+2. [ADR-002: Use Spring Config Import for Local .env Property Loading](#adr-002-use-spring-config-import-for-local-env-property-loading)
+
 # ADR-001: Increase Statement Upload Size Limits in Nginx and Spring Boot
 
 ## Status
@@ -104,3 +110,53 @@ Success criteria:
 - Endpoint: `POST /api/v1/service/statements/mpesa/upload`
 - Controller: [ServiceStatementUploadController.java](../src/main/java/com/credvenn/lm/statementinbox/ServiceStatementUploadController.java)
 - App config: [application.yaml](../src/main/resources/application.yaml)
+
+# ADR-002: Use Spring Config Import for Local .env Property Loading
+
+## Status
+Accepted
+
+## Date
+2026-08-02
+
+## Context
+The application configuration was externalized into a local `.env` file for environment-specific settings such as credentials, URLs, ports, and API keys. For local execution, there was a need to let Spring Boot read those values without requiring every variable to be manually exported into the shell first.
+
+## Decision
+Use Spring Boot config import to load the `.env` file as a properties-style configuration source:
+
+```properties
+spring.config.import=optional:file:.env[.properties]
+```
+
+This allows Spring-managed configuration to resolve values from a local `.env` file when running the application from the project working directory.
+
+## Rationale
+- Keeps local environment-specific values out of `application.yaml`
+- Reduces the need to manually export variables for ordinary local runs
+- Uses Spring Boot's native config import mechanism instead of introducing a separate dotenv library
+
+## Consequences
+### Positive
+- Local development setup becomes simpler when running from the project root
+- Sensitive and environment-specific values can remain outside the committed Spring config
+
+### Trade-offs
+- `.env` must be formatted as a `.properties`-style file with plain `KEY=value` lines
+- Relative `.env` loading depends on the process working directory
+- Complex values are harder to manage safely in `.env` than in YAML
+
+## Operational Notes
+- `spring.config.import` makes values available to Spring property binding only
+- It does not create real OS environment variables for the Java process
+- If non-Spring scripts, libraries, or runtime hooks require true process environment variables, use the service manager to load them, for example with `EnvironmentFile=` in `systemd`
+- For deployment, an absolute import path is safer than relying on the working directory
+
+## Verification
+- Start the application from the project root with the `.env` file present
+- Confirm that datasource, JWT, and integration settings resolve without shell-exporting variables first
+- Confirm that missing `.env` does not fail startup when `optional:` is used
+
+## References
+- App config: [application.yaml](../src/main/resources/application.yaml)
+- Local env file: [.env](../.env)

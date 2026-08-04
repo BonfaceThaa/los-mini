@@ -23,6 +23,17 @@ public final class StatementDtos {
             String currency) {
     }
 
+    @Schema(name = "StatementLoanSummaryResponse")
+    public record StatementLoanSummaryResponse(
+            String lender,
+            BigDecimal amountBorrowed,
+            BigDecimal amountRepaid,
+            Integer timesTaken,
+            Integer timesRepaid,
+            String status,
+            String lastActivityDate) {
+    }
+
     @Schema(name = "StatementProviderAnalysisResponse")
     public record StatementProviderAnalysisResponse(
             String id,
@@ -37,6 +48,10 @@ public final class StatementDtos {
             String riskTier,
             String recommendation,
             String summary,
+            String lastAnalyzedOn,
+            BigDecimal totalIn,
+            BigDecimal totalOut,
+            List<StatementLoanSummaryResponse> loans,
             List<StatementTransactionResponse> transactions,
             Instant createdAt,
             Instant updatedAt) {
