@@ -68,6 +68,7 @@ public interface FineractGateway {
             String name,
             String shortName,
             String description,
+            Boolean active,
             String currencyCode,
             BigDecimal principal,
             BigDecimal minPrincipal,
@@ -297,6 +298,40 @@ public interface FineractGateway {
             Long loanId) {
     }
 
+    record OverdueLoanReportQuery(
+            Integer officeId,
+            Integer loanOfficerId,
+            Integer fromAmount,
+            Integer toAmount,
+            Integer overdueFromDays,
+            Integer overdueToDays) {
+    }
+
+    record OverdueLoanReportItem(
+            Long clientId,
+            String firstName,
+            String middleName,
+            String lastName,
+            String fullName,
+            String mobileNo,
+            BigDecimal loanAmount,
+            BigDecimal loanOutstanding,
+            BigDecimal loanDisbursed,
+            LocalDate paymentDueDate,
+            BigDecimal totalDue,
+            BigDecimal totalOverdue,
+            Long officeNumber,
+            String loanAccountId,
+            String guarantorLastName,
+            Integer numberOfGuarantors,
+            String groupName) {
+    }
+
+    record OverdueLoanReport(
+            OverdueLoanReportQuery query,
+            List<OverdueLoanReportItem> items) {
+    }
+
     String createClient(Tenant tenant, LoanRequestApplication application);
 
     List<FineractLoanProduct> fetchActiveLoanProducts(Tenant tenant);
@@ -334,5 +369,9 @@ public interface FineractGateway {
 
     JournalEntryPage fetchJournalEntries(Tenant tenant, JournalEntryQuery query);
 
+    OverdueLoanReport fetchOverdueLoanReport(Tenant tenant, OverdueLoanReportQuery query);
+
     String postLoanRepayment(Tenant tenant, String fineractLoanId, LoanRepaymentRequest request);
 }
+
+

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.document.ApplicationDocument;
@@ -29,7 +30,9 @@ class StatementAnalysisProcessingServiceTest {
                 .thenReturn(Optional.empty());
         when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
-        when(context.cladfyGateway.submit(application, document)).thenReturn(new StatementAnalysisSubmission(
+        when(context.applicationStatementOtpService.reserveNextOtp("tenant-1", "app-1", "doc-1"))
+                .thenReturn(Optional.of(new ApplicationStatementOtpService.ResolvedOtp("otp-1", "123456", "****56")));
+        when(context.cladfyGateway.submit(application, document, "123456")).thenReturn(new StatementAnalysisSubmission(
                 "CLADFY",
                 "1",
                 "55981",
@@ -44,6 +47,7 @@ class StatementAnalysisProcessingServiceTest {
         context.service.process("tenant-1", "app-1", "doc-1", "system", null);
 
         verify(context.cladfyStatusPollingService).scheduleInitialStatusCheck(any(StatementAnalysis.class));
+        verify(context.subscriptionBillingService, never()).chargeStatementCompletion(any(), any(), any());
         verify(context.statementReviewService, never()).recordDecision(any(), any(), any(), any(), any(), any(), any());
         verify(context.applicationService, never()).handleStatementPassed(any(), any(), any());
         verify(context.applicationService, never()).handleStatementManualReview(any(), any(), any(), any());
@@ -63,7 +67,9 @@ class StatementAnalysisProcessingServiceTest {
                 .thenReturn(Optional.empty());
         when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
-        when(context.cladfyGateway.submit(application, document)).thenReturn(new StatementAnalysisSubmission(
+        when(context.applicationStatementOtpService.reserveNextOtp("tenant-1", "app-1", "doc-1"))
+                .thenReturn(Optional.of(new ApplicationStatementOtpService.ResolvedOtp("otp-1", "123456", "****56")));
+        when(context.cladfyGateway.submit(application, document, "123456")).thenReturn(new StatementAnalysisSubmission(
                 "CLADFY",
                 "1",
                 "55981",
@@ -78,10 +84,62 @@ class StatementAnalysisProcessingServiceTest {
         context.service.process("tenant-1", "app-1", "doc-1", "system", null);
 
         verify(context.cladfyStatusPollingService).scheduleInitialStatusCheck(any(StatementAnalysis.class));
+        verify(context.subscriptionBillingService, never()).chargeStatementCompletion(any(), any(), any());
         verify(context.statementReviewService, never()).recordDecision(any(), any(), any(), any(), any(), any(), any());
         verify(context.applicationService, never()).handleStatementPassed(any(), any(), any());
         verify(context.applicationService, never()).handleStatementManualReview(any(), any(), any(), any());
         verify(context.applicationService, never()).handleStatementFailed(any(), any(), any(), any());
+    }
+
+    @Test
+    void processChargesCompletedProviderAnalysisEvenWhenFailed() {
+        TestContext context = new TestContext();
+        ApplicationDocument document = document("doc-1");
+        LoanRequestApplication application = application("tenant-1", "app-1");
+        StatementAnalysisProvider directProvider = mock(StatementAnalysisProvider.class);
+
+        when(context.statementProviderRegistry.currentProvider()).thenReturn(directProvider);
+        when(directProvider.providerCode()).thenReturn("DIRECT");
+        when(directProvider.supportsAsyncWebhookCompletion()).thenReturn(false);
+        when(directProvider.analyze(application, document)).thenReturn(new StatementAnalysisProvider.StatementDecision(
+                StatementAnalysisStatus.FAILED,
+                null,
+                null,
+                null,
+                "DECLINE",
+                "Provider rejected the statement"));
+        when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
+        when(context.statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc("app-1"))
+                .thenReturn(Optional.empty());
+        when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
+
+        context.service.process("tenant-1", "app-1", "doc-1", "system", null);
+
+        verify(context.subscriptionBillingService).chargeStatementCompletion("tenant-1", null, "system");
+        verify(context.applicationService).handleStatementFailed("tenant-1", "app-1", "system", "Statement analysis failed");
+    }
+
+    @Test
+    void processDoesNotChargeSimulatedFailure() {
+        TestContext context = new TestContext();
+        ApplicationDocument document = document("doc-1");
+        LoanRequestApplication application = application("tenant-1", "app-1");
+        StatementAnalysisProvider directProvider = mock(StatementAnalysisProvider.class);
+
+        when(context.statementProviderRegistry.currentProvider()).thenReturn(directProvider);
+        when(directProvider.providerCode()).thenReturn("DIRECT");
+        when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
+        when(context.statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc("app-1"))
+                .thenReturn(Optional.empty());
+        when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
+
+        context.service.process("tenant-1", "app-1", "doc-1", "system", "FAILED");
+
+        verify(context.subscriptionBillingService, never()).chargeStatementCompletion(any(), any(), any());
+        verify(context.applicationService).handleStatementFailed("tenant-1", "app-1", "system", "Statement analysis failed");
+        verify(directProvider, never()).analyze(any(), any());
     }
 
     private static LoanRequestApplication application(String tenantId, String applicationId) {
@@ -139,6 +197,7 @@ class StatementAnalysisProcessingServiceTest {
         private final SubscriptionBillingService subscriptionBillingService = mock(SubscriptionBillingService.class);
         private final CladfyStatusPollingService cladfyStatusPollingService = mock(CladfyStatusPollingService.class);
         private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
+        private final ApplicationStatementOtpService applicationStatementOtpService = mock(ApplicationStatementOtpService.class);
         private final CladfyGateway cladfyGateway = mock(CladfyGateway.class);
         private final CladfyStatementAnalysisProvider provider = new CladfyStatementAnalysisProvider(cladfyGateway);
         private final StatementAnalysisProcessingService service = new StatementAnalysisProcessingService(
@@ -148,6 +207,7 @@ class StatementAnalysisProcessingServiceTest {
                 documentService,
                 subscriptionBillingService,
                 cladfyStatusPollingService,
-                statementReviewService);
+                statementReviewService,
+                applicationStatementOtpService);
     }
 }

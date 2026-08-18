@@ -27,11 +27,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 @Component
 public class HttpFineractGateway implements FineractGateway {
 
     private static final Logger log = LoggerFactory.getLogger(HttpFineractGateway.class);
+    private static final String OVERDUE_LOANS_REPORT_NAME = "Loan payments due (Overdue Loans)";
 
     private final RestClient restClient;
     private final FineractProperties properties;
@@ -199,6 +201,7 @@ public class HttpFineractGateway implements FineractGateway {
         if (request.description() != null) {
             payload.put("description", request.description());
         }
+
         payload.put("currencyCode", request.currencyCode());
         payload.put("digitsAfterDecimal", 2);
         payload.put("inMultiplesOf", 1);
@@ -453,10 +456,7 @@ public class HttpFineractGateway implements FineractGateway {
                         period.get("totalPaidForPeriod"),
                         period.get("totalPaidInAdvanceForPeriod"),
                         period.get("totalPaidLateForPeriod")));
-                BigDecimal outstandingAmount = decimal(firstNonNull(
-                        period.get("totalOutstandingForPeriod"),
-                        period.get("totalOutstandingLoanBalance"),
-                        period.get("outstandingPrincipalBalance")));
+                BigDecimal outstandingAmount = resolveInstallmentOutstandingAmount(period, dueAmount, paidAmount);
                 boolean fullyPaid = Boolean.TRUE.equals(period.get("complete"))
                         || Boolean.TRUE.equals(period.get("fullyPaid"))
                         || (outstandingAmount != null && outstandingAmount.compareTo(BigDecimal.ZERO) <= 0);
@@ -587,6 +587,42 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     @Override
+    public OverdueLoanReport fetchOverdueLoanReport(Tenant tenant, OverdueLoanReportQuery query) {
+        int officeId = query.officeId() == null ? properties.defaultOfficeId() : query.officeId();
+        int loanOfficerId = query.loanOfficerId() == null ? -1 : query.loanOfficerId();
+        int fromAmount = query.fromAmount() == null ? 0 : query.fromAmount();
+        int toAmount = query.toAmount() == null ? 0 : query.toAmount();
+        int overdueFromDays = query.overdueFromDays() == null ? 1 : query.overdueFromDays();
+        int overdueToDays = query.overdueToDays() == null ? 7 : query.overdueToDays();
+        log.info("Fetching Fineract overdue loans report tenantFineractId={} officeId={} loanOfficerId={} overdueFromDays={} overdueToDays={}",
+                tenant.getFineractTenantId(),
+                officeId,
+                loanOfficerId,
+                overdueFromDays,
+                overdueToDays);
+        Object response = restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/runreports/{reportName}")
+                        .queryParam("R_officeId", officeId)
+                        .queryParam("R_loanOfficerId", loanOfficerId)
+                        .queryParam("R_fromX", fromAmount)
+                        .queryParam("R_toY", toAmount)
+                        .queryParam("R_overdueX", overdueFromDays)
+                        .queryParam("R_overdueY", overdueToDays)
+                        .build(OVERDUE_LOANS_REPORT_NAME))
+                .headers(headers -> applyHeaders(headers, tenant))
+                .retrieve()
+                .body(Object.class);
+        return toOverdueLoanReport(response, new OverdueLoanReportQuery(
+                officeId,
+                loanOfficerId,
+                fromAmount,
+                toAmount,
+                overdueFromDays,
+                overdueToDays));
+    }
+
+    @Override
     public String postLoanRepayment(Tenant tenant, String fineractLoanId, LoanRepaymentRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("dateFormat", "dd MMMM yyyy");
@@ -605,23 +641,45 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     private Map<?, ?> post(String path, Tenant tenant, Map<String, Object> payload) {
-        return restClient.post()
-                .uri(path)
-                .headers(headers -> applyHeaders(headers, tenant))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(Map.class);
+        try {
+            return restClient.post()
+                    .uri(path)
+                    .headers(headers -> applyHeaders(headers, tenant))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientException ex) {
+            log.error(
+                    "Fineract POST failed tenantId={} tenantFineractId={} path={} message={}",
+                    tenant.getId(),
+                    tenant.getFineractTenantId(),
+                    path,
+                    ex.getMessage(),
+                    ex);
+            throw ex;
+        }
     }
 
     private Object put(String path, Tenant tenant, Map<String, Object> payload) {
-        return restClient.put()
-                .uri(path)
-                .headers(headers -> applyHeaders(headers, tenant))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(Object.class);
+        try {
+            return restClient.put()
+                    .uri(path)
+                    .headers(headers -> applyHeaders(headers, tenant))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .body(Object.class);
+        } catch (RestClientException ex) {
+            log.error(
+                    "Fineract PUT failed tenantId={} tenantFineractId={} path={} message={}",
+                    tenant.getId(),
+                    tenant.getFineractTenantId(),
+                    path,
+                    ex.getMessage(),
+                    ex);
+            throw ex;
+        }
     }
 
     private List<Map<String, Object>> extractItems(Object response, String... keys) {
@@ -822,6 +880,77 @@ public class HttpFineractGateway implements FineractGateway {
                 bool(item.get("downPaymentPeriod")));
     }
 
+    private OverdueLoanReport toOverdueLoanReport(Object response, OverdueLoanReportQuery query) {
+        if (!(response instanceof Map<?, ?> map)) {
+            return new OverdueLoanReport(query, List.of());
+        }
+        Map<String, Integer> columnIndexes = resolveColumnIndexes(map.get("columnHeaders"));
+        Object dataValue = map.get("data");
+        if (!(dataValue instanceof List<?> rows) || columnIndexes.isEmpty()) {
+            return new OverdueLoanReport(query, List.of());
+        }
+        List<OverdueLoanReportItem> items = new ArrayList<>();
+        for (Object rowEntry : rows) {
+            if (rowEntry instanceof Map<?, ?> rowMap) {
+                OverdueLoanReportItem item = toOverdueLoanReportItem((Map<String, Object>) rowMap, columnIndexes);
+                if (item != null) {
+                    items.add(item);
+                }
+            }
+        }
+        return new OverdueLoanReport(query, items);
+    }
+
+    private Map<String, Integer> resolveColumnIndexes(Object headersValue) {
+        Map<String, Integer> indexes = new LinkedHashMap<>();
+        if (!(headersValue instanceof List<?> headers)) {
+            return indexes;
+        }
+        for (int index = 0; index < headers.size(); index++) {
+            Object headerValue = headers.get(index);
+            if (headerValue instanceof Map<?, ?> headerMap) {
+                String columnName = text(headerMap.get("columnName"));
+                if (columnName != null && !columnName.isBlank()) {
+                    indexes.put(columnName, index);
+                }
+            }
+        }
+        return indexes;
+    }
+
+    private OverdueLoanReportItem toOverdueLoanReportItem(Map<String, Object> item, Map<String, Integer> columnIndexes) {
+        Object rowValue = item.get("row");
+        if (!(rowValue instanceof List<?> row)) {
+            return null;
+        }
+        return new OverdueLoanReportItem(
+                longValue(valueAt(row, columnIndexes, "id")),
+                text(valueAt(row, columnIndexes, "firstName")),
+                text(valueAt(row, columnIndexes, "middleName")),
+                text(valueAt(row, columnIndexes, "lastName")),
+                text(valueAt(row, columnIndexes, "fullName")),
+                text(valueAt(row, columnIndexes, "mobileNo")),
+                decimal(valueAt(row, columnIndexes, "loanAmount")),
+                decimal(valueAt(row, columnIndexes, "loanOutstanding")),
+                decimal(valueAt(row, columnIndexes, "loanDisbursed")),
+                localDate(valueAt(row, columnIndexes, "paymentDueDate")),
+                decimal(valueAt(row, columnIndexes, "totalDue")),
+                decimal(valueAt(row, columnIndexes, "totalOverdue")),
+                longValue(valueAt(row, columnIndexes, "officeNumber")),
+                text(valueAt(row, columnIndexes, "loanAccountId")),
+                text(valueAt(row, columnIndexes, "guarantorLastName")),
+                integer(valueAt(row, columnIndexes, "numberOfGuarantors")),
+                text(valueAt(row, columnIndexes, "groupName")));
+    }
+
+    private Object valueAt(List<?> row, Map<String, Integer> columnIndexes, String columnName) {
+        Integer index = columnIndexes.get(columnName);
+        if (index == null || index < 0 || index >= row.size()) {
+            return null;
+        }
+        return row.get(index);
+    }
+
     private JournalEntry toJournalEntry(Map<String, Object> item) {
         Set<String> knownKeys = new HashSet<>(Set.of(
                 "id",
@@ -916,6 +1045,21 @@ public class HttpFineractGateway implements FineractGateway {
             return dueAmount.compareTo(BigDecimal.ZERO) > 0;
         }
         return false;
+    }
+
+    private BigDecimal resolveInstallmentOutstandingAmount(
+            Map<?, ?> period,
+            BigDecimal dueAmount,
+            BigDecimal paidAmount) {
+        BigDecimal periodOutstandingAmount = decimal(period.get("totalOutstandingForPeriod"));
+        if (periodOutstandingAmount != null) {
+            return periodOutstandingAmount;
+        }
+        if (dueAmount != null && paidAmount != null) {
+            BigDecimal calculatedOutstanding = dueAmount.subtract(paidAmount);
+            return calculatedOutstanding.compareTo(BigDecimal.ZERO) > 0 ? calculatedOutstanding : BigDecimal.ZERO;
+        }
+        return null;
     }
 
     private Object firstNonNull(Object... values) {
@@ -1039,3 +1183,11 @@ public class HttpFineractGateway implements FineractGateway {
         return interestRatePerPeriod.multiply(BigDecimal.valueOf(multiplier));
     }
 }
+
+
+
+
+
+
+
+

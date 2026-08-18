@@ -426,4 +426,116 @@ public final class FineractDtos {
                     page.pageItems().stream().map(JournalEntryResponse::from).toList());
         }
     }
+
+    @Schema(name = "OverdueLoanDashboardFiltersResponse")
+    public record OverdueLoanDashboardFiltersResponse(
+            Integer officeId,
+            Integer loanOfficerId,
+            Integer fromAmount,
+            Integer toAmount,
+            Integer overdueFromDays,
+            Integer overdueToDays) {
+
+        public static OverdueLoanDashboardFiltersResponse from(FineractGateway.OverdueLoanReportQuery query) {
+            return new OverdueLoanDashboardFiltersResponse(
+                    query.officeId(),
+                    query.loanOfficerId(),
+                    query.fromAmount(),
+                    query.toAmount(),
+                    query.overdueFromDays(),
+                    query.overdueToDays());
+        }
+    }
+
+    @Schema(name = "OverdueLoanDashboardSummaryResponse")
+    public record OverdueLoanDashboardSummaryResponse(
+            Integer totalLoans,
+            BigDecimal totalLoanAmount,
+            BigDecimal totalOutstandingAmount,
+            BigDecimal totalCurrentDueAmount,
+            BigDecimal totalOverdueAmount,
+            LocalDate oldestPaymentDueDate) {
+    }
+
+    @Schema(name = "OverdueLoanDashboardItemResponse")
+    public record OverdueLoanDashboardItemResponse(
+            Long clientId,
+            String firstName,
+            String middleName,
+            String lastName,
+            String fullName,
+            String mobileNo,
+            BigDecimal loanAmount,
+            BigDecimal loanOutstanding,
+            BigDecimal loanDisbursed,
+            LocalDate paymentDueDate,
+            BigDecimal totalDue,
+            BigDecimal totalOverdue,
+            Long officeNumber,
+            String loanAccountId,
+            String guarantorLastName,
+            Integer numberOfGuarantors,
+            String groupName) {
+
+        public static OverdueLoanDashboardItemResponse from(FineractGateway.OverdueLoanReportItem item) {
+            return new OverdueLoanDashboardItemResponse(
+                    item.clientId(),
+                    item.firstName(),
+                    item.middleName(),
+                    item.lastName(),
+                    item.fullName(),
+                    item.mobileNo(),
+                    item.loanAmount(),
+                    item.loanOutstanding(),
+                    item.loanDisbursed(),
+                    item.paymentDueDate(),
+                    item.totalDue(),
+                    item.totalOverdue(),
+                    item.officeNumber(),
+                    item.loanAccountId(),
+                    item.guarantorLastName(),
+                    item.numberOfGuarantors(),
+                    item.groupName());
+        }
+    }
+
+    @Schema(name = "OverdueLoanDashboardResponse")
+    public record OverdueLoanDashboardResponse(
+            OverdueLoanDashboardFiltersResponse filters,
+            OverdueLoanDashboardSummaryResponse summary,
+            List<OverdueLoanDashboardItemResponse> items) {
+
+        public static OverdueLoanDashboardResponse from(FineractGateway.OverdueLoanReport report) {
+            List<OverdueLoanDashboardItemResponse> items = report.items().stream()
+                    .map(OverdueLoanDashboardItemResponse::from)
+                    .toList();
+            OverdueLoanDashboardSummaryResponse summary = new OverdueLoanDashboardSummaryResponse(
+                    items.size(),
+                    sum(report.items().stream().map(FineractGateway.OverdueLoanReportItem::loanAmount).toList()),
+                    sum(report.items().stream().map(FineractGateway.OverdueLoanReportItem::loanOutstanding).toList()),
+                    sum(report.items().stream().map(FineractGateway.OverdueLoanReportItem::totalDue).toList()),
+                    sum(report.items().stream().map(FineractGateway.OverdueLoanReportItem::totalOverdue).toList()),
+                    report.items().stream()
+                            .map(FineractGateway.OverdueLoanReportItem::paymentDueDate)
+                            .filter(value -> value != null)
+                            .sorted()
+                            .findFirst()
+                            .orElse(null));
+            return new OverdueLoanDashboardResponse(
+                    OverdueLoanDashboardFiltersResponse.from(report.query()),
+                    summary,
+                    items);
+        }
+
+        private static BigDecimal sum(List<BigDecimal> values) {
+            BigDecimal total = BigDecimal.ZERO;
+            for (BigDecimal value : values) {
+                if (value != null) {
+                    total = total.add(value);
+                }
+            }
+            return total;
+        }
+    }
 }
+

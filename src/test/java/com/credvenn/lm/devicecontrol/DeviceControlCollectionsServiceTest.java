@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.application.LoanRequestApplication;
+import com.credvenn.lm.application.ApplicationStatusHistoryRepository;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.fineract.FineractGateway;
 import com.credvenn.lm.inventory.InventoryDeviceRepository;
@@ -166,6 +167,7 @@ class DeviceControlCollectionsServiceTest {
         private final TenantDeviceControlNudgeRuleRepository nudgeRuleRepository = mock(TenantDeviceControlNudgeRuleRepository.class);
         private final LoanDeviceControlStateRepository stateRepository = mock(LoanDeviceControlStateRepository.class);
         private final DeviceControlActionLogRepository actionLogRepository = mock(DeviceControlActionLogRepository.class);
+        private final ApplicationStatusHistoryRepository statusHistoryRepository = mock(ApplicationStatusHistoryRepository.class);
         private final LoanRequestApplicationRepository applicationRepository = mock(LoanRequestApplicationRepository.class);
         private final InventoryDeviceRepository inventoryDeviceRepository = mock(InventoryDeviceRepository.class);
         private final TenantService tenantService = mock(TenantService.class);
@@ -180,6 +182,7 @@ class DeviceControlCollectionsServiceTest {
                 nudgeRuleRepository,
                 stateRepository,
                 actionLogRepository,
+                statusHistoryRepository,
                 applicationRepository,
                 inventoryDeviceRepository,
                 tenantService,
@@ -187,3 +190,7 @@ class DeviceControlCollectionsServiceTest {
                 deviceControlGateway);
     }
 }
+
+
+
+

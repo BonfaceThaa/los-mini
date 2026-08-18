@@ -33,7 +33,7 @@ class SmileIdKycProviderTest {
 
         KycProvider.KycDecision decision = provider.assess(application());
 
-        assertEquals(KycStatus.MANUAL_REVIEW_REQUIRED, decision.status());
+        assertEquals(KycStatus.PASSED, decision.status());
         assertEquals("1000000002", decision.providerReference());
         assertEquals("Partial Match", decision.actionDetails().names());
         assertEquals("Exact Match", decision.actionDetails().firstName());

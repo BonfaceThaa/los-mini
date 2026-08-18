@@ -1,5 +1,6 @@
 package com.credvenn.lm.statement;
 
+import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
@@ -21,6 +22,7 @@ public class StatementAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(StatementAnalysisService.class);
     private static final String LEGACY_MANUAL_OVERRIDE_PROVIDER = "MANUAL_OVERRIDE";
+    private static final String MPESA_STATEMENT_DOCUMENT_TYPE = "MPESA_STATEMENT";
 
     private final StatementAnalysisRepository statementAnalysisRepository;
     private final StatementAnalysisProcessingService processingService;
@@ -29,6 +31,7 @@ public class StatementAnalysisService {
     private final DocumentService documentService;
     private final StatementReviewService statementReviewService;
     private final CladfyStatementTransactionRepository cladfyStatementTransactionRepository;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
     private final ObjectMapper objectMapper;
 
     public StatementAnalysisService(
@@ -39,6 +42,7 @@ public class StatementAnalysisService {
             DocumentService documentService,
             StatementReviewService statementReviewService,
             CladfyStatementTransactionRepository cladfyStatementTransactionRepository,
+            ApplicationStatementOtpService applicationStatementOtpService,
             ObjectMapper objectMapper) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.processingService = processingService;
@@ -47,6 +51,7 @@ public class StatementAnalysisService {
         this.documentService = documentService;
         this.statementReviewService = statementReviewService;
         this.cladfyStatementTransactionRepository = cladfyStatementTransactionRepository;
+        this.applicationStatementOtpService = applicationStatementOtpService;
         this.objectMapper = objectMapper;
     }
 
@@ -58,12 +63,12 @@ public class StatementAnalysisService {
             String actor,
             String simulateOutcome) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            var application = applicationService.getRequired(tenantId, applicationId);
+            applicationService.getRequired(tenantId, applicationId);
             var document = documentService.getRequired(tenantId, documentId);
             if (!document.getApplicationId().equals(applicationId)) {
                 throw new NotFoundException("Document does not belong to the loan request application");
             }
-            if (requiresStatementOtp() && (application.getStatementOtp() == null || application.getStatementOtp().isBlank())) {
+            if (requiresStatementOtp() && !applicationStatementOtpService.hasAnyActiveOtp(tenantId, applicationId)) {
                 throw new BadRequestException("Statement OTP is required before submitting the statement to the configured provider");
             }
             if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
@@ -82,6 +87,33 @@ public class StatementAnalysisService {
             log.info("Queued statement analysis for documentId={}", documentId);
             processingService.process(tenantId, applicationId, documentId, actor, simulateOutcome);
             return buildResponse(applicationId, Optional.of(analysis));
+        }
+    }
+
+    @Transactional
+    public boolean queueRetryIfEligible(String tenantId, String applicationId, String actor) {
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
+            applicationService.getRequired(tenantId, applicationId);
+            if (requiresStatementOtp() && !applicationStatementOtpService.hasAnyActiveOtp(tenantId, applicationId)) {
+                return false;
+            }
+            if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
+                    StatementAnalysisStatus.PENDING,
+                    StatementAnalysisStatus.IN_PROGRESS))) {
+                log.info("Skipping statement analysis retry because an analysis is already pending/in progress");
+                return false;
+            }
+            Optional<StatementAnalysis> latestAnalysis = getLatestProviderAnalysis(applicationId);
+            if (latestAnalysis.isPresent() && latestAnalysis.get().getStatus() == StatementAnalysisStatus.PASSED) {
+                log.info("Skipping statement analysis retry because latest provider analysis already passed");
+                return false;
+            }
+            return documentService.findLatestByApplicationIdAndDocumentType(tenantId, applicationId, MPESA_STATEMENT_DOCUMENT_TYPE)
+                    .map(document -> {
+                        run(tenantId, applicationId, document.getId(), actor, null);
+                        return true;
+                    })
+                    .orElse(false);
         }
     }
 

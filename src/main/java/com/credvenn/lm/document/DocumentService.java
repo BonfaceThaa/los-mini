@@ -7,6 +7,7 @@ import com.credvenn.lm.statement.StatementDocumentUploadedEvent;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -142,6 +143,13 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<ApplicationDocument> findLatestByApplicationIdAndDocumentType(String tenantId, String applicationId, String documentType) {
+        applicationRepository.findByIdAndTenantId(applicationId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Loan request application not found"));
+        return documentRepository.findFirstByApplicationIdAndDocumentTypeOrderByCreatedAtDesc(applicationId, documentType);
+    }
+
+    @Transactional(readOnly = true)
     public Resource loadContent(String tenantId, String documentId) throws IOException {
         ApplicationDocument document = getRequired(tenantId, documentId);
         log.debug("Loading authenticated document content documentId={} applicationId={}", documentId, document.getApplicationId());
@@ -197,3 +205,4 @@ public class DocumentService {
         return toResponse(document);
     }
 }
+

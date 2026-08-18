@@ -72,15 +72,20 @@ public class SubscriptionBillingService {
     }
 
     @Transactional
-    public void chargeStatementSuccess(String tenantId, String statementAnalysisId, String actor) {
+    public void chargeStatementCompletion(String tenantId, String statementAnalysisId, String actor) {
         chargeSuccess(
                 tenantId,
                 statementAnalysisId,
                 SubscriptionChargeType.STATEMENT_SUCCESS,
                 SubscriptionReferenceType.STATEMENT_ANALYSIS,
                 subscriptionPlan -> subscriptionPlan.getStatementSuccessCost(),
-                "Successful statement analysis charge",
+                "Completed statement analysis charge",
                 actor);
+    }
+
+    @Transactional
+    public void chargeStatementSuccess(String tenantId, String statementAnalysisId, String actor) {
+        chargeStatementCompletion(tenantId, statementAnalysisId, actor);
     }
 
     @Transactional
@@ -201,3 +206,4 @@ public class SubscriptionBillingService {
         return (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
 }
+

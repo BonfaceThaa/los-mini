@@ -1,5 +1,6 @@
 package com.credvenn.lm.payment;
 
+import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
@@ -16,8 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MpesaPaymentService {
@@ -62,7 +63,6 @@ public class MpesaPaymentService {
             receipt.setTransactionAmount(transAmount);
             receipt.setTransactionTime(parseTransactionTime(transTime));
             receipt.setMpesaReceiptNumber(receiptNumber);
-            receipt.setMsisdn(msisdn);
             receipt.setPayerFirstName(firstName);
             receipt.setPayerMiddleName(middleName);
             receipt.setPayerLastName(lastName);
@@ -79,6 +79,51 @@ public class MpesaPaymentService {
         } else {
             log.info("Ignoring duplicate Mpesa callback for receiptNumber={}", receiptNumber);
         }
+    }
+
+    @Transactional
+    public void acceptMatchedDarajaCallback(
+            LoanRequestApplication application,
+            String transId,
+            String transTime,
+            BigDecimal transAmount,
+            String businessShortCode,
+            String billRefNumber,
+            String msisdn,
+            String firstName,
+            String middleName,
+            String lastName,
+            String rawPayload) {
+        String receiptNumber = transId.trim();
+        if (receiptRepository.existsByMpesaReceiptNumber(receiptNumber)) {
+            log.info("Ignoring duplicate Mpesa callback for receiptNumber={}", receiptNumber);
+            return;
+        }
+
+        MpesaPaymentReceipt receipt = new MpesaPaymentReceipt();
+        receipt.setTenantId(application.getTenantId());
+        receipt.setBusinessShortCode(businessShortCode.trim());
+        receipt.setBillRefNumber(billRefNumber.trim());
+        receipt.setNormalizedPhoneNumber(normalizePhone(application.getPhoneNumber(), billRefNumber));
+        receipt.setTransactionAmount(transAmount);
+        receipt.setTransactionTime(parseTransactionTime(transTime));
+        receipt.setMpesaReceiptNumber(receiptNumber);
+        receipt.setPayerFirstName(firstName);
+        receipt.setPayerMiddleName(middleName);
+        receipt.setPayerLastName(lastName);
+        receipt.setProcessingStatus(MpesaPaymentProcessingStatus.RECEIVED);
+        receipt.setMatchedApplicationId(application.getId());
+        receipt.setMatchedFineractClientId(application.getFineractClientId());
+        receipt.setMatchedFineractLoanId(application.getFineractLoanId());
+        receipt.setRawPayload(rawPayload);
+        receipt = receiptRepository.save(receipt);
+        log.info(
+                "Stored matched Mpesa receipt id={} receiptNumber={} tenantId={} applicationId={} and publishing processing event",
+                receipt.getId(),
+                receipt.getMpesaReceiptNumber(),
+                application.getTenantId(),
+                application.getId());
+        eventPublisher.publishEvent(new MpesaPaymentAcceptedEvent(receipt.getId()));
     }
 
     @Transactional
@@ -124,7 +169,6 @@ public class MpesaPaymentService {
         receipt.setTransactionAmount(decimal(metadata.get("Amount"), stkRequest.getInstallmentAmount()));
         receipt.setTransactionTime(parseCallbackTransactionTime(text(metadata.get("TransactionDate"))));
         receipt.setMpesaReceiptNumber(receiptNumber);
-        receipt.setMsisdn(text(metadata.get("PhoneNumber")));
         receipt.setProcessingStatus(MpesaPaymentProcessingStatus.RECEIVED);
         receipt.setMatchedApplicationId(stkRequest.getApplicationId());
         receipt.setMatchedFineractLoanId(stkRequest.getFineractLoanId());
@@ -214,4 +258,24 @@ public class MpesaPaymentService {
             return fallback;
         }
     }
+
+    private String normalizePhone(String primaryPhone, String fallbackBillRefNumber) {
+        String normalizedPrimary = normalizeDigits(primaryPhone);
+        if (!normalizedPrimary.isBlank()) {
+            return normalizedPrimary;
+        }
+        return normalizeDigits(fallbackBillRefNumber);
+    }
+
+    private String normalizeDigits(String value) {
+        String digits = value == null ? "" : value.replaceAll("\\D", "");
+        if (digits.startsWith("0") && digits.length() == 10) {
+            return "254" + digits.substring(1);
+        }
+        if (digits.startsWith("254")) {
+            return digits;
+        }
+        return digits;
+    }
 }
+

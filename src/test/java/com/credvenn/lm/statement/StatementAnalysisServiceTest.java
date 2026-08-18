@@ -12,8 +12,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.application.ApplicationService;
-import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.document.DocumentService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +24,7 @@ class StatementAnalysisServiceTest {
     @Test
     void manualPassPreservesProviderAnalysisAndAddsSeparateReview() {
         TestContext context = new TestContext();
-        LoanRequestApplication application = new LoanRequestApplication();
+        var application = new com.credvenn.lm.application.LoanRequestApplication();
         StatementAnalysis failedAnalysis = analysis("analysis-1", StatementAnalysisStatus.FAILED, "CLADFY", Instant.parse("2026-07-02T09:00:00Z"));
         StatementReview review = review(
                 "review-1",
@@ -71,7 +71,7 @@ class StatementAnalysisServiceTest {
     @Test
     void getReturnsReviewOnlyWhenManualApprovalExistsWithoutProviderAnalysis() {
         TestContext context = new TestContext();
-        LoanRequestApplication application = new LoanRequestApplication();
+        var application = new com.credvenn.lm.application.LoanRequestApplication();
         StatementReview review = review(
                 "review-2",
                 "tenant-1",
@@ -160,6 +160,8 @@ class StatementAnalysisServiceTest {
         private final DocumentService documentService = mock(DocumentService.class);
         private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
         private final CladfyStatementTransactionRepository transactionRepository = mock(CladfyStatementTransactionRepository.class);
+        private final com.credvenn.lm.application.ApplicationStatementOtpService applicationStatementOtpService = mock(com.credvenn.lm.application.ApplicationStatementOtpService.class);
+        private final ObjectMapper objectMapper = new ObjectMapper();
         private final StatementAnalysisService service = new StatementAnalysisService(
                 statementAnalysisRepository,
                 processingService,
@@ -167,6 +169,8 @@ class StatementAnalysisServiceTest {
                 applicationService,
                 documentService,
                 statementReviewService,
-                transactionRepository);
+                transactionRepository,
+                applicationStatementOtpService,
+                objectMapper);
     }
 }

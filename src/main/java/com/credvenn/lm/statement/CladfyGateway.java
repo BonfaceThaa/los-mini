@@ -5,7 +5,7 @@ import com.credvenn.lm.document.ApplicationDocument;
 
 public interface CladfyGateway {
 
-    StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document);
+    StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp);
 
     CladfyDtos.DocumentStatusResponse fetchDocumentStatus(String documentId);
 

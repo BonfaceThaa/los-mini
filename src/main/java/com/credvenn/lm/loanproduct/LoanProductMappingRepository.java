@@ -14,7 +14,10 @@ public interface LoanProductMappingRepository extends JpaRepository<LoanProductM
 
     Optional<LoanProductMapping> findByTenantIdAndShortNameIgnoreCase(String tenantId, String shortName);
 
+    Page<LoanProductMapping> findAllByTenantId(String tenantId, Pageable pageable);
+
     Page<LoanProductMapping> findAllByTenantIdAndActiveTrue(String tenantId, Pageable pageable);
 
     List<LoanProductMapping> findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc(String tenantId);
 }
+

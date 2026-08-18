@@ -14,7 +14,7 @@ public interface StatementAnalysisProvider {
         return false;
     }
 
-    default StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document) {
+    default StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp) {
         throw new UnsupportedOperationException("Provider does not support asynchronous submission");
     }
 

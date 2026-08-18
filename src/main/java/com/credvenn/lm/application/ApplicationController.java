@@ -3,6 +3,7 @@ package com.credvenn.lm.application;
 import com.credvenn.lm.common.api.PagedResponse;
 import com.credvenn.lm.fineract.FineractDtos;
 import com.credvenn.lm.security.CurrentActorService;
+import com.credvenn.lm.statement.StatementAnalysisService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,9 +14,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -25,10 +26,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class ApplicationController {
 
     private final ApplicationService applicationService;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
+    private final StatementAnalysisService statementAnalysisService;
     private final CurrentActorService currentActorService;
 
-    public ApplicationController(ApplicationService applicationService, CurrentActorService currentActorService) {
+    public ApplicationController(
+            ApplicationService applicationService,
+            ApplicationStatementOtpService applicationStatementOtpService,
+            StatementAnalysisService statementAnalysisService,
+            CurrentActorService currentActorService) {
         this.applicationService = applicationService;
+        this.applicationStatementOtpService = applicationStatementOtpService;
+        this.statementAnalysisService = statementAnalysisService;
         this.currentActorService = currentActorService;
     }
 
@@ -61,6 +70,31 @@ public class ApplicationController {
         return ResponseEntity.ok(applicationService.get(actor.tenantId(), applicationId));
     }
 
+    @PostMapping("/{applicationId}/statement-otps")
+    @PreAuthorize("hasAuthority('LOAN_CREATE')")
+    @Operation(summary = "Add more statement OTP candidates to an application")
+    public ResponseEntity<ApplicationDtos.AddStatementOtpsResponse> addStatementOtps(
+            @PathVariable String applicationId,
+            @Valid @RequestBody ApplicationDtos.AddStatementOtpsRequest request) {
+        var actor = currentActorService.requireCurrentUser();
+        applicationService.getRequired(actor.tenantId(), applicationId);
+        List<ApplicationStatementOtp> added = applicationStatementOtpService.addOtps(actor.tenantId(), applicationId, request.otps());
+        boolean retryQueued = statementAnalysisService.queueRetryIfEligible(actor.tenantId(), applicationId, actor.username());
+        List<ApplicationDtos.StatementOtpResponse> otps = applicationStatementOtpService.list(applicationId).stream()
+                .map(ApplicationController::toStatementOtpResponse)
+                .toList();
+        String message = added.isEmpty()
+                ? "No new statement OTPs were added"
+                : retryQueued
+                        ? "Statement OTPs saved and statement analysis retry queued"
+                        : "Statement OTPs saved";
+        return ResponseEntity.ok(new ApplicationDtos.AddStatementOtpsResponse(
+                added.size(),
+                retryQueued,
+                message,
+                otps));
+    }
+
     @PostMapping("/{applicationId}/consent")
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
     @Operation(summary = "Capture customer consent")
@@ -83,8 +117,8 @@ public class ApplicationController {
 
     @GetMapping("/{applicationId}/eligible-products")
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
-    @Operation(summary = "List Mini-LOS filtered eligible Fineract products")
-    public ResponseEntity<List<FineractDtos.LoanProductResponse>> eligibleProducts(@PathVariable String applicationId) {
+    @Operation(summary = "List Mini-LOS filtered eligible Fineract products with offer-readiness prerequisites")
+    public ResponseEntity<ApplicationDtos.EligibleProductsResponse> eligibleProducts(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(applicationService.getEligibleProducts(actor.tenantId(), applicationId));
     }
@@ -121,5 +155,17 @@ public class ApplicationController {
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> activateLoan(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(applicationService.activateLoan(actor.tenantId(), applicationId, actor.username()));
+    }
+
+    private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtp otp) {
+        return new ApplicationDtos.StatementOtpResponse(
+                otp.getId(),
+                otp.getOtpMasked(),
+                otp.getStatus(),
+                otp.getSource(),
+                otp.getCreatedAt(),
+                otp.getTestedAt(),
+                otp.getUsedAt(),
+                otp.getFailureReason());
     }
 }

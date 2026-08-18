@@ -54,7 +54,7 @@ public class HttpCladfyGateway implements CladfyGateway {
     }
 
     @Override
-    public StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document) {
+    public StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp) {
         String providerCode = resolveProviderCode(document.getDocumentType());
         CladfyDtos.ClientResponse client = createOrReuseClient(application);
         if (client == null || client.id() == null) {
@@ -374,5 +374,6 @@ public class HttpCladfyGateway implements CladfyGateway {
         return null;
     }
 }
+
 
 

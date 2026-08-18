@@ -1,5 +1,6 @@
 package com.credvenn.lm.application;
 
+import com.credvenn.lm.fineract.FineractDtos;
 import com.credvenn.lm.inventory.DepositType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -45,12 +46,53 @@ public final class ApplicationDtos {
     public record InternalApprovalRequest(@NotBlank @Size(max = 1000) String reason) {
     }
 
+    @Schema(name = "AddStatementOtpsRequest")
+    public record AddStatementOtpsRequest(
+            @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 100) String> otps) {
+    }
+
+    @Schema(name = "StatementOtpResponse")
+    public record StatementOtpResponse(
+            String id,
+            String maskedOtp,
+            ApplicationStatementOtpStatus status,
+            ApplicationStatementOtpSource source,
+            Instant createdAt,
+            Instant testedAt,
+            Instant usedAt,
+            String failureReason) {
+    }
+
+    @Schema(name = "AddStatementOtpsResponse")
+    public record AddStatementOtpsResponse(
+            int addedCount,
+            boolean retryQueued,
+            String message,
+            List<StatementOtpResponse> otps) {
+    }
+
     @Schema(name = "ApplicationStatusHistoryResponse")
     public record ApplicationStatusHistoryResponse(
             String fromStatus,
             String toStatus,
             String changedBy,
             String reason) {
+    }
+
+    @Schema(name = "EligibleProductRequirementsResponse")
+    public record EligibleProductRequirementsResponse(
+            boolean kycApproved,
+            boolean fineractClientCreated,
+            boolean statementApproved) {
+    }
+
+    @Schema(name = "EligibleProductsResponse")
+    public record EligibleProductsResponse(
+            ApplicationStatus applicationStatus,
+            boolean offersReady,
+            String message,
+            EligibleProductRequirementsResponse requirements,
+            List<FineractDtos.LoanProductResponse> products) {
     }
 
     @Schema(name = "LoanRequestApplicationResponse")

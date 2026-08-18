@@ -5,6 +5,7 @@ import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.common.logging.LoggingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -24,10 +25,11 @@ public class ApplicationCreatedInboundStatementRetryListener {
         this.applicationService = applicationService;
     }
 
+    @Async("taskExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onApplicationCreated(ApplicationCreatedEvent event) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(event.tenantId(), event.applicationId())) {
-            log.info("Retrying waiting inbound statements after application creation");
+            log.info("Retrying waiting inbound statements after application creation asynchronously");
             inboundStatementProcessor.retryWaitingReceiptsForApplication(
                     event.tenantId(),
                     applicationService.getRequired(event.tenantId(), event.applicationId()),

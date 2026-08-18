@@ -9,4 +9,6 @@ public interface ApplicationDocumentRepository extends JpaRepository<Application
     List<ApplicationDocument> findAllByApplicationIdOrderByCreatedAtDesc(String applicationId);
 
     Optional<ApplicationDocument> findByIdAndTenantId(String id, String tenantId);
+
+    Optional<ApplicationDocument> findFirstByApplicationIdAndDocumentTypeOrderByCreatedAtDesc(String applicationId, String documentType);
 }

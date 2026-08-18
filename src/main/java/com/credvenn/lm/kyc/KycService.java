@@ -174,12 +174,13 @@ public class KycService {
             if (application.getFineractClientId() != null && !application.getFineractClientId().isBlank()) {
                 return applicationService.get(tenantId, applicationId);
             }
-            if (application.getStatus() != ApplicationStatus.KYC_PASSED
-                    && application.getStatus() != ApplicationStatus.CLIENT_CREATION_FAILED) {
-                throw new BadRequestException("Client creation retry is only allowed after KYC pass or client creation failure");
-            }
             KycCheck check = kycCheckRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId)
                     .orElseThrow(() -> new NotFoundException("KYC check not found"));
+            if (check.getStatus() != KycStatus.PASSED
+                    && check.getStatus() != KycStatus.MANUALLY_APPROVED
+                    && application.getStatus() != ApplicationStatus.CLIENT_CREATION_FAILED) {
+                throw new BadRequestException("Client creation retry is only allowed after KYC approval or client creation failure");
+            }
             applicationService.markClientCreationInProgress(tenantId, applicationId, actor);
             kycApprovalService.requestClientProvisioning(tenantId, applicationId, actor, check.getId());
             return applicationService.get(tenantId, applicationId);
@@ -245,3 +246,4 @@ public class KycService {
                 || status == KycStatus.MANUAL_REVIEW_REQUIRED;
     }
 }
+

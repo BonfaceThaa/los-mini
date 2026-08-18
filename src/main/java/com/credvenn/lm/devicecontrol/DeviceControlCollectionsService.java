@@ -1,6 +1,7 @@
 package com.credvenn.lm.devicecontrol;
 
 import com.credvenn.lm.application.ApplicationStatus;
+import com.credvenn.lm.application.ApplicationStatusHistoryRepository;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.exception.BadRequestException;
@@ -47,6 +48,7 @@ public class DeviceControlCollectionsService {
     private final TenantDeviceControlNudgeRuleRepository nudgeRuleRepository;
     private final LoanDeviceControlStateRepository stateRepository;
     private final DeviceControlActionLogRepository actionLogRepository;
+    private final ApplicationStatusHistoryRepository statusHistoryRepository;
     private final LoanRequestApplicationRepository applicationRepository;
     private final InventoryDeviceRepository inventoryDeviceRepository;
     private final TenantService tenantService;
@@ -62,6 +64,7 @@ public class DeviceControlCollectionsService {
             TenantDeviceControlNudgeRuleRepository nudgeRuleRepository,
             LoanDeviceControlStateRepository stateRepository,
             DeviceControlActionLogRepository actionLogRepository,
+            ApplicationStatusHistoryRepository statusHistoryRepository,
             LoanRequestApplicationRepository applicationRepository,
             InventoryDeviceRepository inventoryDeviceRepository,
             TenantService tenantService,
@@ -75,6 +78,7 @@ public class DeviceControlCollectionsService {
         this.nudgeRuleRepository = nudgeRuleRepository;
         this.stateRepository = stateRepository;
         this.actionLogRepository = actionLogRepository;
+        this.statusHistoryRepository = statusHistoryRepository;
         this.applicationRepository = applicationRepository;
         this.inventoryDeviceRepository = inventoryDeviceRepository;
         this.tenantService = tenantService;
@@ -774,7 +778,7 @@ public class DeviceControlCollectionsService {
         logEntry.setRequestedBy(triggerReference == null ? actor : actor + "|" + triggerReference);
         logEntry = actionLogRepository.save(logEntry);
 
-        ZonedDateTime utcDateTime = autoLockDueDateTimeUtc(nextDueDate);
+        ZonedDateTime utcDateTime = autoLockDueDateTimeUtc(nextDueDate, resolveActivationTimeNairobi(application));
         try {
             DeviceControlGateway.RuntimeConfig runtimeConfig = configService.getRuntimeConfig(config.getTenantId());
             String transactionId = UUID.randomUUID().toString();
@@ -1073,9 +1077,18 @@ public class DeviceControlCollectionsService {
         return action;
     }
 
-    private ZonedDateTime autoLockDueDateTimeUtc(LocalDate nextDueDate) {
-        return ZonedDateTime.of(nextDueDate, AUTO_LOCK_TIME_NAIROBI, NAIROBI_ZONE)
+    private ZonedDateTime autoLockDueDateTimeUtc(LocalDate nextDueDate, LocalTime activationTimeNairobi) {
+        LocalTime lockTimeNairobi = activationTimeNairobi == null ? AUTO_LOCK_TIME_NAIROBI : activationTimeNairobi;
+        return ZonedDateTime.of(nextDueDate, lockTimeNairobi, NAIROBI_ZONE)
                 .withZoneSameInstant(ZoneOffset.UTC);
+    }
+
+    private LocalTime resolveActivationTimeNairobi(LoanRequestApplication application) {
+        return statusHistoryRepository.findFirstCreatedAtByApplicationIdAndToStatus(
+                        application.getId(),
+                        ApplicationStatus.FINERACT_LOAN_ACTIVATED.name())
+                .map(instant -> instant.atZone(NAIROBI_ZONE).toLocalTime().withSecond(0).withNano(0))
+                .orElse(AUTO_LOCK_TIME_NAIROBI);
     }
 
     private void updateDeviceLockStatus(LoanDeviceControlState state, InventoryDeviceLockStatus lockStatus) {
@@ -1258,3 +1271,6 @@ public class DeviceControlCollectionsService {
             DeviceControlGateway.BulkActionItem item) {
     }
 }
+
+
+

@@ -1,5 +1,6 @@
 package com.credvenn.lm.payment;
 
+import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
 import com.credvenn.lm.common.api.PagedResponse;
@@ -43,14 +44,17 @@ public class DepositPaymentService {
     private final DepositPaymentRepository depositPaymentRepository;
     private final TenantPaymentChannelRepository channelRepository;
     private final LoanRequestApplicationRepository applicationRepository;
+    private final MpesaPaymentService mpesaPaymentService;
 
     public DepositPaymentService(
             DepositPaymentRepository depositPaymentRepository,
             TenantPaymentChannelRepository channelRepository,
-            LoanRequestApplicationRepository applicationRepository) {
+            LoanRequestApplicationRepository applicationRepository,
+            MpesaPaymentService mpesaPaymentService) {
         this.depositPaymentRepository = depositPaymentRepository;
         this.channelRepository = channelRepository;
         this.applicationRepository = applicationRepository;
+        this.mpesaPaymentService = mpesaPaymentService;
     }
 
     @Transactional
@@ -123,6 +127,10 @@ public class DepositPaymentService {
             return C2bValidationDecision.reject("No tenant application matched the bill reference phone number");
         }
 
+        if (shouldRouteToRepayment(application)) {
+            return C2bValidationDecision.accept(application.getId());
+        }
+
         boolean existingDeposit = depositPaymentRepository.existsByTenantIdAndMatchedApplicationIdAndStatusIn(
                 resolvedTenantId,
                 application.getId(),
@@ -158,6 +166,28 @@ public class DepositPaymentService {
         String normalizedPhoneNumber = normalizePhone(billRefNumber);
         LoanRequestApplication application = findMatchingApplication(resolvedTenantId, normalizedPhoneNumber);
 
+        if (application != null && shouldRouteToRepayment(application)) {
+            log.info(
+                    "Routing inbound Mpesa callback to repayment processing tenantId={} applicationId={} receiptNumber={} status={}",
+                    resolvedTenantId,
+                    application.getId(),
+                    receiptNumber,
+                    application.getStatus());
+            mpesaPaymentService.acceptMatchedDarajaCallback(
+                    application,
+                    transId,
+                    transTime,
+                    transAmount,
+                    businessShortCode,
+                    billRefNumber,
+                    msisdn,
+                    firstName,
+                    middleName,
+                    lastName,
+                    rawPayload);
+            return null;
+        }
+
         DepositPayment depositPayment = new DepositPayment();
         depositPayment.setTenantId(resolvedTenantId);
         depositPayment.setBusinessShortCode(businessShortCode.trim());
@@ -166,7 +196,6 @@ public class DepositPaymentService {
         depositPayment.setTransactionAmount(transAmount);
         depositPayment.setTransactionTime(parseTransactionTime(transTime));
         depositPayment.setMpesaReceiptNumber(receiptNumber);
-        // depositPayment.setMsisdn(msisdn);
         depositPayment.setPayerFirstName(firstName);
         depositPayment.setPayerMiddleName(middleName);
         depositPayment.setPayerLastName(lastName);
@@ -269,6 +298,14 @@ public class DepositPaymentService {
                 .orElse(null);
     }
 
+    private boolean shouldRouteToRepayment(LoanRequestApplication application) {
+        if (application.getFineractLoanId() == null || application.getFineractLoanId().isBlank()) {
+            return false;
+        }
+        return application.getStatus() == ApplicationStatus.FINERACT_LOAN_ACTIVATED
+                || application.getStatus() == ApplicationStatus.LOAN_CLOSED;
+    }
+
     private Instant parseTransactionTime(String value) {
         return LocalDateTime.parse(value.trim(), TRANSACTION_TIME_FORMAT).atZone(MPESA_ZONE).toInstant();
     }
@@ -300,3 +337,4 @@ public class DepositPaymentService {
         }
     }
 }
+

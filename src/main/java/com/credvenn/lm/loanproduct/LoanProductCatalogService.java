@@ -156,6 +156,7 @@ public class LoanProductCatalogService {
                 resolved.displayName(),
                 resolved.shortName(),
                 resolved.description(),
+                resolved.active(),
                 resolved.currencyCode(),
                 resolved.defaultPrincipal(),
                 resolved.minPrincipal(),
@@ -207,14 +208,47 @@ public class LoanProductCatalogService {
             Integer page,
             Integer size,
             String sortBy,
-            String sortDir) {
+            String sortDir,
+            boolean includeInactive) {
         String tenantId = currentActorService.requireCurrentUser().tenantId();
         var pageable = PaginationSupport.pageable(page, size, sortBy, sortDir, LOAN_PRODUCT_SORTS, "name");
         String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, LOAN_PRODUCT_SORTS, "name");
         String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
-        var resultPage = loanProductMappingRepository.findAllByTenantIdAndActiveTrue(tenantId, pageable)
+        var resultPage = (includeInactive
+                ? loanProductMappingRepository.findAllByTenantId(tenantId, pageable)
+                : loanProductMappingRepository.findAllByTenantIdAndActiveTrue(tenantId, pageable))
                 .map(FineractDtos.LoanProductResponse::from);
         return PagedResponse.fromPage(resultPage, normalizedSortBy, normalizedSortDir);
+    }
+
+    @Transactional
+    public LoanProductCatalogDtos.LoanProductCatalogResponse deactivateCurrentTenantProductByShortName(String shortName) {
+        var actor = currentActorService.requireCurrentUser();
+        String tenantId = actor.tenantId();
+        LoanProductMapping mapping = loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
+                .orElseThrow(() -> new NotFoundException("Loan product not found"));
+
+        if (!mapping.isActive()) {
+            throw new BadRequestException("Loan product is already inactive");
+        }
+
+        mapping.setActive(false);
+        mapping.setUpdatedBy(actor.username());
+        mapping = loanProductMappingRepository.save(mapping);
+        return LoanProductCatalogDtos.LoanProductCatalogResponse.from(mapping);
+    }
+
+    @Transactional
+    public void deleteCurrentTenantProductByShortName(String shortName) {
+        String tenantId = currentActorService.requireCurrentUser().tenantId();
+        LoanProductMapping mapping = loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
+                .orElseThrow(() -> new NotFoundException("Loan product not found"));
+
+        if (mapping.isActive()) {
+            throw new BadRequestException("Deactivate the loan product before deleting it");
+        }
+
+        loanProductMappingRepository.delete(mapping);
     }
 
     private ResolvedLoanProductUpdate resolveUpdate(
@@ -476,3 +510,7 @@ public class LoanProductCatalogService {
             boolean active) {
     }
 }
+
+
+
+

@@ -17,6 +17,8 @@ import com.credvenn.lm.fineract.FineractGateway;
 import com.credvenn.lm.inventory.InventoryDeviceAssignment;
 import com.credvenn.lm.inventory.InventoryDeviceAssignmentRepository;
 import com.credvenn.lm.loanproduct.LoanProductMappingRepository;
+import com.credvenn.lm.kyc.KycCheckRepository;
+import com.credvenn.lm.statement.StatementReviewRepository;
 import com.credvenn.lm.payment.DepositPaymentRepository;
 import com.credvenn.lm.payment.DepositPaymentStatus;
 import com.credvenn.lm.statement.StatementAnalysisRepository;
@@ -356,6 +358,8 @@ class ApplicationServiceTest {
         private final LoanRequestApplicationRepository applicationRepository = mock(LoanRequestApplicationRepository.class);
         private final ApplicationStatusHistoryRepository statusHistoryRepository = mock(ApplicationStatusHistoryRepository.class);
         private final SubscriptionGuardService subscriptionGuardService = mock(SubscriptionGuardService.class);
+        private final KycCheckRepository kycCheckRepository = mock(KycCheckRepository.class);
+        private final StatementReviewRepository statementReviewRepository = mock(StatementReviewRepository.class);
         private final TenantService tenantService = mock(TenantService.class);
         private final FineractGateway fineractGateway = mock(FineractGateway.class);
         private final DepositPaymentRepository depositPaymentRepository = mock(DepositPaymentRepository.class);
@@ -366,6 +370,8 @@ class ApplicationServiceTest {
         private final ApplicationService service = new ApplicationService(
                 applicationRepository,
                 statusHistoryRepository,
+                kycCheckRepository,
+                statementReviewRepository,
                 mock(StatementAnalysisRepository.class),
                 tenantService,
                 fineractGateway,
@@ -378,3 +384,5 @@ class ApplicationServiceTest {
                 subscriptionBillingService);
     }
 }
+
+

@@ -30,8 +30,8 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
     }
 
     @Override
-    public StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document) {
-        return cladfyGateway.submit(application, document);
+    public StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp) {
+        return cladfyGateway.submit(application, document, statementOtp);
     }
 
     public StatementDecision toDecision(CladfyDtos.AnalysisResultsResponse analysis, CladfyDtos.CreditScoreResponse score) {
@@ -87,5 +87,3 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
         };
     }
 }
-
-

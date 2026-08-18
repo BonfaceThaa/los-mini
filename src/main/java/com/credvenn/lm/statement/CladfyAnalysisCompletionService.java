@@ -1,5 +1,6 @@
 package com.credvenn.lm.statement;
 
+import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -24,6 +25,7 @@ public class CladfyAnalysisCompletionService {
     private final ApplicationService applicationService;
     private final SubscriptionBillingService subscriptionBillingService;
     private final StatementReviewService statementReviewService;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
     private final ObjectMapper objectMapper;
 
     public CladfyAnalysisCompletionService(
@@ -34,6 +36,7 @@ public class CladfyAnalysisCompletionService {
             ApplicationService applicationService,
             SubscriptionBillingService subscriptionBillingService,
             StatementReviewService statementReviewService,
+            ApplicationStatementOtpService applicationStatementOtpService,
             ObjectMapper objectMapper) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.transactionRepository = transactionRepository;
@@ -42,6 +45,7 @@ public class CladfyAnalysisCompletionService {
         this.applicationService = applicationService;
         this.subscriptionBillingService = subscriptionBillingService;
         this.statementReviewService = statementReviewService;
+        this.applicationStatementOtpService = applicationStatementOtpService;
         this.objectMapper = objectMapper;
     }
 
@@ -90,6 +94,9 @@ public class CladfyAnalysisCompletionService {
             }
         }
         statementAnalysisRepository.save(analysis);
+        if (analysis.getStatementOtpId() != null && !analysis.getStatementOtpId().isBlank()) {
+            applicationStatementOtpService.markSuccessful(analysis.getTenantId(), analysis.getStatementOtpId(), analysis.getSourceDocumentId());
+        }
         recordSystemDecision(analysis, actor, decision.status(), decision.summary());
 
         applyApplicationOutcome(analysis, actor, decision.status(), "Cladfy score requires manual review", "Cladfy score failed statement analysis");
@@ -128,6 +135,12 @@ public class CladfyAnalysisCompletionService {
         analysis.setRawProviderResponse("documentStatus=%s fetchedAt=%s".formatted(statusResponse, Instant.now()));
         markCompleted(analysis, completionSource);
         statementAnalysisRepository.save(analysis);
+        if (analysis.getStatementOtpId() != null && !analysis.getStatementOtpId().isBlank()) {
+            applicationStatementOtpService.markFailed(
+                    analysis.getTenantId(),
+                    analysis.getStatementOtpId(),
+                    statusResponse == null ? null : statusResponse.fail_reason());
+        }
         recordSystemDecision(analysis, actor, StatementAnalysisStatus.FAILED, analysis.getSummary());
 
         applicationService.handleStatementFailed(
@@ -183,8 +196,8 @@ public class CladfyAnalysisCompletionService {
             StatementAnalysisStatus status,
             String manualReviewReason,
             String failedReason) {
+        subscriptionBillingService.chargeStatementCompletion(analysis.getTenantId(), analysis.getId(), actor);
         if (status == StatementAnalysisStatus.PASSED) {
-            subscriptionBillingService.chargeStatementSuccess(analysis.getTenantId(), analysis.getId(), actor);
             applicationService.handleStatementPassed(analysis.getTenantId(), analysis.getApplicationId(), actor);
         } else if (status == StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED) {
             applicationService.handleStatementManualReview(analysis.getTenantId(), analysis.getApplicationId(), actor, manualReviewReason);
@@ -238,3 +251,5 @@ public class CladfyAnalysisCompletionService {
             String last_activity_date) {
     }
 }
+
+

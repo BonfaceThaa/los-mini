@@ -36,6 +36,9 @@ public class StatementAnalysis extends AuditableEntity {
     @Column(name = "source_document_id", length = 36)
     private String sourceDocumentId;
 
+    @Column(name = "statement_otp_id", length = 36)
+    private String statementOtpId;
+
     @Column(length = 1000)
     private String summary;
 
@@ -105,6 +108,8 @@ public class StatementAnalysis extends AuditableEntity {
     public void setStatus(StatementAnalysisStatus status) { this.status = status; }
     public String getSourceDocumentId() { return sourceDocumentId; }
     public void setSourceDocumentId(String sourceDocumentId) { this.sourceDocumentId = sourceDocumentId; }
+    public String getStatementOtpId() { return statementOtpId; }
+    public void setStatementOtpId(String statementOtpId) { this.statementOtpId = statementOtpId; }
     public String getSummary() { return summary; }
     public void setSummary(String summary) { this.summary = summary; }
     public BigDecimal getAverageMonthlyInflow() { return averageMonthlyInflow; }

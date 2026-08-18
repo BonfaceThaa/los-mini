@@ -40,6 +40,29 @@ public class FineractLoanService {
     }
 
     @Transactional(readOnly = true)
+    public FineractDtos.OverdueLoanDashboardResponse getCurrentTenantOverdueLoanDashboard(
+            Integer officeId,
+            Integer loanOfficerId,
+            Integer fromAmount,
+            Integer toAmount,
+            Integer overdueFromDays,
+            Integer overdueToDays) {
+        String tenantId = currentActorService.requireCurrentUser().tenantId();
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new NotFoundException("Tenant not found");
+        }
+        Tenant tenant = tenantService.getRequiredTenant(tenantId);
+        FineractGateway.OverdueLoanReportQuery query = new FineractGateway.OverdueLoanReportQuery(
+                officeId,
+                loanOfficerId,
+                fromAmount,
+                toAmount,
+                overdueFromDays,
+                overdueToDays);
+        return FineractDtos.OverdueLoanDashboardResponse.from(fineractGateway.fetchOverdueLoanReport(tenant, query));
+    }
+
+    @Transactional(readOnly = true)
     public FineractDtos.JournalEntryListResponse getCurrentTenantJournalEntries(FineractGateway.JournalEntryQuery query) {
         String tenantId = currentActorService.requireCurrentUser().tenantId();
         if (tenantId == null || tenantId.isBlank()) {

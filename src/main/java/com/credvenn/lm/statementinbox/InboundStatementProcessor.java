@@ -1,5 +1,6 @@
 package com.credvenn.lm.statementinbox;
 
+import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.application.LoanRequestApplicationRepository;
@@ -39,6 +40,7 @@ public class InboundStatementProcessor {
     private final LoanRequestApplicationRepository applicationRepository;
     private final DocumentService documentService;
     private final InboundStatementStorageService inboundStatementStorageService;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
 
     public InboundStatementProcessor(
             InboundStatementReceiptRepository receiptRepository,
@@ -46,13 +48,15 @@ public class InboundStatementProcessor {
             InboundStatementFilenameParser filenameParser,
             LoanRequestApplicationRepository applicationRepository,
             DocumentService documentService,
-            InboundStatementStorageService inboundStatementStorageService) {
+            InboundStatementStorageService inboundStatementStorageService,
+            ApplicationStatementOtpService applicationStatementOtpService) {
         this.receiptRepository = receiptRepository;
         this.inboxRepository = inboxRepository;
         this.filenameParser = filenameParser;
         this.applicationRepository = applicationRepository;
         this.documentService = documentService;
         this.inboundStatementStorageService = inboundStatementStorageService;
+        this.applicationStatementOtpService = applicationStatementOtpService;
     }
 
     @Async
@@ -234,7 +238,7 @@ public class InboundStatementProcessor {
     }
 
     private boolean hasStatementOtp(LoanRequestApplication application) {
-        return application.getStatementOtp() != null && !application.getStatementOtp().isBlank();
+        return applicationStatementOtpService.hasAnyActiveOtp(application.getTenantId(), application.getId());
     }
 
     private String maskPhoneToken(String phoneToken) {

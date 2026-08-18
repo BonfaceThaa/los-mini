@@ -1,5 +1,6 @@
 package com.credvenn.lm.statement;
 
+import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.logging.LoggingContext;
@@ -27,6 +28,7 @@ public class StatementAnalysisProcessingService {
     private final SubscriptionBillingService subscriptionBillingService;
     private final CladfyStatusPollingService cladfyStatusPollingService;
     private final StatementReviewService statementReviewService;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
 
     public StatementAnalysisProcessingService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -35,7 +37,8 @@ public class StatementAnalysisProcessingService {
             DocumentService documentService,
             SubscriptionBillingService subscriptionBillingService,
             CladfyStatusPollingService cladfyStatusPollingService,
-            StatementReviewService statementReviewService) {
+            StatementReviewService statementReviewService,
+            ApplicationStatementOtpService applicationStatementOtpService) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
@@ -43,6 +46,7 @@ public class StatementAnalysisProcessingService {
         this.subscriptionBillingService = subscriptionBillingService;
         this.cladfyStatusPollingService = cladfyStatusPollingService;
         this.statementReviewService = statementReviewService;
+        this.applicationStatementOtpService = applicationStatementOtpService;
     }
 
     @Async
@@ -50,8 +54,8 @@ public class StatementAnalysisProcessingService {
     public void process(String tenantId, String applicationId, String documentId, String actor, String simulateOutcome) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             log.info(
-                    "Starting asynchronous statement analysis using provider={} documentId={}",
-                    statementProviderRegistry.currentProvider().providerCode(),
+                    "Starting asynchronous statement analysis using provider={} documentId={}"
+                    , statementProviderRegistry.currentProvider().providerCode(),
                     documentId);
             applicationService.handleStatementInProgress(tenantId, applicationId, actor);
             ApplicationDocument document = documentService.getRequired(tenantId, documentId);
@@ -67,11 +71,15 @@ public class StatementAnalysisProcessingService {
             var application = applicationService.getRequired(tenantId, applicationId);
             StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
             if (simulatedDecision != null) {
-                applyDecision(tenantId, applicationId, actor, analysis, simulatedDecision);
+                applyDecision(tenantId, applicationId, actor, analysis, simulatedDecision, false);
                 return;
             }
             if (provider.supportsAsyncWebhookCompletion()) {
-                StatementAnalysisSubmission submission = provider.submit(application, document);
+                ApplicationStatementOtpService.ResolvedOtp resolvedOtp = applicationStatementOtpService
+                        .reserveNextOtp(tenantId, applicationId, documentId)
+                        .orElseThrow(() -> new BadRequestException("No pending statement OTP is available for submission"));
+                analysis.setStatementOtpId(resolvedOtp.otpId());
+                StatementAnalysisSubmission submission = provider.submit(application, document, resolvedOtp.otpValue());
                 analysis.setProvider(submission.provider());
                 analysis.setProviderStatus(submission.providerStatus());
                 analysis.setExternalClientId(submission.externalClientId());
@@ -79,15 +87,17 @@ public class StatementAnalysisProcessingService {
                 analysis.setExternalBusinessId(submission.externalBusinessId());
                 analysis.setSummary(submission.summary());
                 analysis.setRawProviderResponse(submission.rawProviderResponse());
+                statementAnalysisRepository.save(analysis);
                 cladfyStatusPollingService.scheduleInitialStatusCheck(analysis);
                 log.info(
-                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={}",
-                        submission.provider(),
+                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={} otpId={}"
+                        , submission.provider(),
                         submission.externalClientId(),
-                        submission.externalDocumentId());
+                        submission.externalDocumentId(),
+                        resolvedOtp.otpId());
                 return;
             }
-            applyDecision(tenantId, applicationId, actor, analysis, provider.analyze(application, document));
+            applyDecision(tenantId, applicationId, actor, analysis, provider.analyze(application, document), true);
         } catch (RuntimeException ex) {
             log.error("Asynchronous statement analysis failed", ex);
             throw ex;
@@ -99,40 +109,31 @@ public class StatementAnalysisProcessingService {
             String applicationId,
             String actor,
             StatementAnalysis analysis,
-            StatementAnalysisProvider.StatementDecision decision) {
-        applyDecision(tenantId, applicationId, actor, analysis, decision, null, null, "DIRECT");
-    }
-
-    private void applyDecision(
-            String tenantId,
-            String applicationId,
-            String actor,
-            StatementAnalysis analysis,
             StatementAnalysisProvider.StatementDecision decision,
-            Integer creditScore,
-            String riskTier,
-            String completionSource) {
+            boolean chargeProviderCompletion) {
         analysis.setStatus(decision.status());
         analysis.setAverageMonthlyInflow(decision.averageMonthlyInflow());
         analysis.setAverageMonthlyOutflow(decision.averageMonthlyOutflow());
         analysis.setAffordabilityScore(decision.affordabilityScore());
         analysis.setRecommendation(decision.recommendation());
         analysis.setSummary(decision.summary());
-        analysis.setCreditScore(creditScore);
-        analysis.setRiskTier(riskTier);
+        analysis.setCreditScore(null);
+        analysis.setRiskTier(null);
         analysis.setNextStatusCheckAt(null);
         analysis.setLastStatusCheckAt(Instant.now());
-        analysis.setCompletionSource(completionSource);
+        analysis.setCompletionSource("DIRECT");
         analysis.setCompletedAt(Instant.now());
         statementAnalysisRepository.save(analysis);
         recordSystemOutcome(tenantId, applicationId, analysis, actor, decision.status(), decision.summary());
         log.info(
-                "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
-                decision.status(),
+                "Statement analysis completed with status={} affordabilityScore={} recommendation={}"
+                , decision.status(),
                 decision.affordabilityScore(),
                 decision.recommendation());
+        if (chargeProviderCompletion) {
+            subscriptionBillingService.chargeStatementCompletion(tenantId, analysis.getId(), actor);
+        }
         if (decision.status() == StatementAnalysisStatus.PASSED) {
-            subscriptionBillingService.chargeStatementSuccess(tenantId, analysis.getId(), actor);
             applicationService.handleStatementPassed(tenantId, applicationId, actor);
         } else if (decision.status() == StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED) {
             applicationService.handleStatementManualReview(tenantId, applicationId, actor, "Statement analysis requires manual review");
@@ -206,4 +207,3 @@ public class StatementAnalysisProcessingService {
         return normalized.isBlank() ? null : normalized;
     }
 }
-

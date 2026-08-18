@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,13 +33,14 @@ public class FineractLoanProductController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
-    @Operation(summary = "List active tenant-owned loan products for the authenticated tenant")
+    @Operation(summary = "List tenant-owned loan products for the authenticated tenant")
     public ResponseEntity<PagedResponse<FineractDtos.LoanProductResponse>> listLoanProducts(
             @RequestParam(defaultValue = "0") Integer page,
             @RequestParam(defaultValue = "20") Integer size,
             @RequestParam(defaultValue = "name") String sortBy,
-            @RequestParam(defaultValue = "asc") String sortDir) {
-        return ResponseEntity.ok(loanProductCatalogService.listCurrentTenantLoanProducts(page, size, sortBy, sortDir));
+            @RequestParam(defaultValue = "asc") String sortDir,
+            @RequestParam(defaultValue = "false") boolean includeInactive) {
+        return ResponseEntity.ok(loanProductCatalogService.listCurrentTenantLoanProducts(page, size, sortBy, sortDir, includeInactive));
     }
 
     @PostMapping
@@ -64,4 +66,21 @@ public class FineractLoanProductController {
             @Valid @RequestBody LoanProductCatalogDtos.UpdateLoanProductRequest request) {
         return ResponseEntity.ok(loanProductCatalogService.updateCurrentTenantProductByShortName(shortName, request));
     }
+
+    @PostMapping("/{shortName}/deactivate")
+    @PreAuthorize("hasAuthority('LOAN_PRODUCT_UPDATE')")
+    @Operation(summary = "Deactivate a tenant loan product in Mini-LOS and Fineract by short name")
+    public ResponseEntity<LoanProductCatalogDtos.LoanProductCatalogResponse> deactivateLoanProduct(@PathVariable String shortName) {
+        return ResponseEntity.ok(loanProductCatalogService.deactivateCurrentTenantProductByShortName(shortName));
+    }
+
+    @DeleteMapping("/{shortName}")
+    @PreAuthorize("hasAuthority('LOAN_PRODUCT_UPDATE')")
+    @Operation(summary = "Delete an inactive tenant loan product mapping by short name")
+    public ResponseEntity<Void> deleteLoanProduct(@PathVariable String shortName) {
+        loanProductCatalogService.deleteCurrentTenantProductByShortName(shortName);
+        return ResponseEntity.noContent().build();
+    }
 }
+
+

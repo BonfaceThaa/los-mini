@@ -15,11 +15,15 @@ import com.credvenn.lm.inventory.DepositType;
 import com.credvenn.lm.inventory.InventoryDevice;
 import com.credvenn.lm.inventory.InventoryDeviceAssignmentRepository;
 import com.credvenn.lm.loanproduct.LoanProductMapping;
+import com.credvenn.lm.kyc.KycCheckRepository;
+import com.credvenn.lm.kyc.KycStatus;
 import com.credvenn.lm.loanproduct.LoanProductMappingRepository;
 import com.credvenn.lm.statement.StatementAnalysis;
 import com.credvenn.lm.statement.StatementAnalysisRepository;
 import com.credvenn.lm.statement.StatementAnalysisStatus;
 import com.credvenn.lm.subscription.SubscriptionBillingService;
+import com.credvenn.lm.statement.StatementReviewDecision;
+import com.credvenn.lm.statement.StatementReviewRepository;
 import com.credvenn.lm.subscription.SubscriptionGuardService;
 import com.credvenn.lm.tenant.Tenant;
 import com.credvenn.lm.tenant.TenantStatementAnalysisMode;
@@ -59,6 +63,8 @@ public class ApplicationService {
     private final LoanRequestApplicationRepository applicationRepository;
     private final ApplicationStatusHistoryRepository statusHistoryRepository;
     private final StatementAnalysisRepository statementAnalysisRepository;
+    private final KycCheckRepository kycCheckRepository;
+    private final StatementReviewRepository statementReviewRepository;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
     private final LoanProductMappingRepository loanProductMappingRepository;
@@ -72,6 +78,8 @@ public class ApplicationService {
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
             ApplicationStatusHistoryRepository statusHistoryRepository,
+            KycCheckRepository kycCheckRepository,
+            StatementReviewRepository statementReviewRepository,
             StatementAnalysisRepository statementAnalysisRepository,
             TenantService tenantService,
             FineractGateway fineractGateway,
@@ -84,6 +92,8 @@ public class ApplicationService {
             SubscriptionBillingService subscriptionBillingService) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
+        this.kycCheckRepository = kycCheckRepository;
+        this.statementReviewRepository = statementReviewRepository;
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
@@ -213,16 +223,29 @@ public class ApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public List<FineractDtos.LoanProductResponse> getEligibleProducts(String tenantId, String applicationId) {
+    public ApplicationDtos.EligibleProductsResponse getEligibleProducts(String tenantId, String applicationId) {
         LoanRequestApplication application = getRequired(tenantId, applicationId);
-        return getEligibleProductsInternal(application).stream().map(FineractDtos.LoanProductResponse::from).toList();
+        OfferReadiness readiness = assessOfferReadiness(application);
+        List<FineractDtos.LoanProductResponse> products = readiness.offersReady()
+                ? getEligibleProductsByAmount(application).stream().map(FineractDtos.LoanProductResponse::from).toList()
+                : List.of();
+        return new ApplicationDtos.EligibleProductsResponse(
+                application.getStatus(),
+                readiness.offersReady(),
+                readiness.message(),
+                new ApplicationDtos.EligibleProductRequirementsResponse(
+                        readiness.kycApproved(),
+                        readiness.fineractClientCreated(),
+                        readiness.statementApproved()),
+                products);
     }
 
     @Transactional(readOnly = true)
     public List<FineractDtos.LoanProductResponse> getAllActiveProducts(String tenantId, String applicationId) {
-        LoanRequestApplication application = getRequired(tenantId, applicationId);
-        Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
-        return fineractGateway.fetchActiveLoanProducts(tenant).stream().map(FineractDtos.LoanProductResponse::from).toList();
+        getRequired(tenantId, applicationId);
+        return loanProductMappingRepository.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc(tenantId).stream()
+                .map(FineractDtos.LoanProductResponse::from)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -368,7 +391,11 @@ public class ApplicationService {
             changeStatus(application, ApplicationStatus.KYC_PASSED_CLIENT_CREATED, actor, "Fineract client created after KYC pass");
             if (tenant.getStatementAnalysisMode() == TenantStatementAnalysisMode.DISABLED) {
                 recordDisabledStatementAnalysis(application, actor);
-                changeStatus(application, ApplicationStatus.OFFERS_READY, actor, "Statement analysis disabled for tenant");
+                maybeMoveToOffersReady(application, actor);
+                return;
+            }
+            if (statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId()).isPresent()) {
+                maybeMoveToOffersReady(application, actor);
                 return;
             }
             changeStatus(application, ApplicationStatus.STATEMENT_PENDING, actor, "Awaiting statement upload");
@@ -414,9 +441,9 @@ public class ApplicationService {
     public void handleStatementPassed(String tenantId, String applicationId, String actor) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
-            log.info("Statement analysis passed and eligible offers are ready");
+            log.info("Statement analysis passed; evaluating offer readiness");
             changeStatus(application, ApplicationStatus.STATEMENT_VERIFIED, actor, "Statement analysis passed");
-            changeStatus(application, ApplicationStatus.OFFERS_READY, actor, "Eligible products ready");
+            maybeMoveToOffersReady(application, actor);
         }
     }
 
@@ -503,17 +530,90 @@ public class ApplicationService {
     }
 
     private List<FineractLoanProduct> getEligibleProductsInternal(LoanRequestApplication application) {
-        Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
-        if (tenant.getStatementAnalysisMode() != TenantStatementAnalysisMode.DISABLED) {
-            Optional<StatementAnalysis> latestAnalysis = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId());
-            if (latestAnalysis.isEmpty() || latestAnalysis.get().getStatus() != StatementAnalysisStatus.PASSED) {
-                return List.of();
-            }
+        if (!assessOfferReadiness(application).offersReady()) {
+            return List.of();
         }
+        return getEligibleProductsByAmount(application);
+    }
+
+    private List<FineractLoanProduct> getEligibleProductsByAmount(LoanRequestApplication application) {
         return getActiveTenantProducts(application.getTenantId()).stream()
                 .filter(product -> product.maxPrincipal() == null || product.maxPrincipal().compareTo(application.getRequestedAmount()) >= 0)
                 .filter(product -> product.minPrincipal() == null || product.minPrincipal().compareTo(application.getRequestedAmount()) <= 0)
                 .toList();
+    }
+
+    private void maybeMoveToOffersReady(LoanRequestApplication application, String actor) {
+        OfferReadiness readiness = assessOfferReadiness(application);
+        if (readiness.offersReady()) {
+            changeStatus(application, ApplicationStatus.OFFERS_READY, actor, "Eligible products ready");
+            return;
+        }
+        log.info(
+                "Offers not ready applicationId={} kycApproved={} fineractClientCreated={} statementApproved={} message={}",
+                application.getId(),
+                readiness.kycApproved(),
+                readiness.fineractClientCreated(),
+                readiness.statementApproved(),
+                readiness.message());
+    }
+
+    private OfferReadiness assessOfferReadiness(LoanRequestApplication application) {
+        Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
+        boolean kycApproved = kycCheckRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
+                .map(check -> check.getStatus() == KycStatus.PASSED || check.getStatus() == KycStatus.MANUALLY_APPROVED)
+                .orElse(false);
+        boolean fineractClientCreated = application.getFineractClientId() != null && !application.getFineractClientId().isBlank();
+        boolean statementApproved = isStatementApproved(application, tenant);
+        boolean offersReady = kycApproved && fineractClientCreated && statementApproved;
+        return new OfferReadiness(
+                offersReady,
+                kycApproved,
+                fineractClientCreated,
+                statementApproved,
+                buildOffersReadinessMessage(offersReady, kycApproved, fineractClientCreated, statementApproved));
+    }
+
+    private boolean isStatementApproved(LoanRequestApplication application, Tenant tenant) {
+        if (tenant.getStatementAnalysisMode() == TenantStatementAnalysisMode.DISABLED) {
+            return true;
+        }
+        Optional<StatementReviewDecision> latestReviewDecision = statementReviewRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
+                .map(review -> review.getDecision());
+        if (latestReviewDecision.isPresent()) {
+            return latestReviewDecision.get() == StatementReviewDecision.APPROVED;
+        }
+        return statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
+                .map(analysis -> analysis.getStatus() == StatementAnalysisStatus.PASSED)
+                .orElse(false);
+    }
+
+    private String buildOffersReadinessMessage(
+            boolean offersReady,
+            boolean kycApproved,
+            boolean fineractClientCreated,
+            boolean statementApproved) {
+        if (offersReady) {
+            return "Offers ready";
+        }
+        if (!kycApproved) {
+            return "Offers are not ready. KYC approval is still pending.";
+        }
+        if (!fineractClientCreated) {
+            return "Offers are not ready. Fineract client creation is still pending.";
+        }
+        if (!statementApproved) {
+            return "Offers are not ready. Statement approval is still pending.";
+        }
+        return "Offers are not ready.";
+    }
+
+    private record OfferReadiness(
+            boolean offersReady,
+            boolean kycApproved,
+            boolean fineractClientCreated,
+            boolean statementApproved,
+            String message) {
     }
 
     private void recordDisabledStatementAnalysis(LoanRequestApplication application, String actor) {
@@ -823,3 +923,9 @@ public class ApplicationService {
         return totalRepaymentAmount.divide(BigDecimal.valueOf(numberOfRepayments), 2, RoundingMode.HALF_UP);
     }
 }
+
+
+
+
+
+

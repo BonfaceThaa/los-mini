@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +21,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 class LoanProductCatalogServiceTest {
 
@@ -58,6 +61,7 @@ class LoanProductCatalogServiceTest {
         assertEquals("Updated Phone Loan", gatewayRequest.name());
         assertEquals("PH12", gatewayRequest.shortName());
         assertEquals("New description", gatewayRequest.description());
+        assertFalse(gatewayRequest.active());
         assertEquals(new BigDecimal("18000.00"), gatewayRequest.maxPrincipal());
         assertEquals(14, gatewayRequest.numberOfRepayments());
         assertNull(gatewayRequest.loanPortfolioAccountId());
@@ -79,6 +83,55 @@ class LoanProductCatalogServiceTest {
         assertEquals("Updated Phone Loan", response.displayName());
         assertEquals("New description", response.description());
         assertFalse(response.active());
+    }
+
+    @Test
+    void listCurrentTenantLoanProductsCanIncludeInactiveProducts() {
+        TestContext context = new TestContext();
+        when(context.currentActorService.requireCurrentUser()).thenReturn(
+                new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
+        when(context.loanProductMappingRepository.findAllByTenantId(eq("tenant-1"), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(existingMapping(), inactiveMapping())));
+
+        var response = context.service.listCurrentTenantLoanProducts(0, 20, "name", "asc", true);
+
+        verify(context.loanProductMappingRepository).findAllByTenantId(eq("tenant-1"), any(Pageable.class));
+        assertEquals(2, response.items().size());
+        assertEquals("Inactive Phone Loan", response.items().get(1).name());
+    }
+
+    @Test
+    void deactivateCurrentTenantProductMarksProductInactiveLocallyOnly() {
+        TestContext context = new TestContext();
+        LoanProductMapping existing = existingMapping();
+        when(context.currentActorService.requireCurrentUser()).thenReturn(
+                new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
+        when(context.loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase("tenant-1", "PH12"))
+                .thenReturn(Optional.of(existing));
+        when(context.loanProductMappingRepository.save(any(LoanProductMapping.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = context.service.deactivateCurrentTenantProductByShortName("PH12");
+
+        verify(context.fineractGateway, never()).updateLoanProduct(any(Tenant.class), any(String.class), any(FineractGateway.UpdateLoanProductRequest.class));
+        ArgumentCaptor<LoanProductMapping> savedCaptor = ArgumentCaptor.forClass(LoanProductMapping.class);
+        verify(context.loanProductMappingRepository).save(savedCaptor.capture());
+        assertFalse(savedCaptor.getValue().isActive());
+        assertFalse(response.active());
+    }
+
+    @Test
+    void deleteCurrentTenantProductDeletesInactiveMapping() {
+        TestContext context = new TestContext();
+        LoanProductMapping existing = inactiveMapping();
+        when(context.currentActorService.requireCurrentUser()).thenReturn(
+                new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
+        when(context.loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase("tenant-1", "PH8"))
+                .thenReturn(Optional.of(existing));
+
+        context.service.deleteCurrentTenantProductByShortName("PH8");
+
+        verify(context.loanProductMappingRepository).delete(existing);
+        verify(context.fineractGateway, never()).updateLoanProduct(any(Tenant.class), any(String.class), any(FineractGateway.UpdateLoanProductRequest.class));
     }
 
     private static LoanProductMapping existingMapping() {
@@ -106,6 +159,15 @@ class LoanProductCatalogServiceTest {
         mapping.setActive(true);
         mapping.setCreatedBy("creator");
         mapping.setUpdatedBy("creator");
+        return mapping;
+    }
+
+    private static LoanProductMapping inactiveMapping() {
+        LoanProductMapping mapping = existingMapping();
+        mapping.setProductCode("PHONE_8_WEEKS");
+        mapping.setShortName("PH8");
+        mapping.setDisplayName("Inactive Phone Loan");
+        mapping.setActive(false);
         return mapping;
     }
 

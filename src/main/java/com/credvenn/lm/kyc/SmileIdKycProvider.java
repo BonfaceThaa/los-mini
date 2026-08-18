@@ -25,8 +25,8 @@ public class SmileIdKycProvider implements KycProvider {
         String summary = summarize(response);
         KycActionDetails actionDetails = toActionDetails(response.actions());
         return switch (resultCode == null ? "" : resultCode.trim()) {
-            case "1020" -> new KycDecision(KycStatus.PASSED, response.smileJobId(), summary, actionDetails);
-            case "1021", "1015" -> new KycDecision(KycStatus.MANUAL_REVIEW_REQUIRED, response.smileJobId(), summary, actionDetails);
+            case "1020", "1021" -> new KycDecision(KycStatus.PASSED, response.smileJobId(), summary, actionDetails);
+            case "1015" -> new KycDecision(KycStatus.MANUAL_REVIEW_REQUIRED, response.smileJobId(), summary, actionDetails);
             case "1022", "1013", "1014", "2413", "2204", "2213", "0001" ->
                     new KycDecision(KycStatus.FAILED, response.smileJobId(), summary, actionDetails);
             case "2405", "2205", "2212", "2220" ->
