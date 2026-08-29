@@ -72,7 +72,7 @@ public class StatementAnalysis extends AuditableEntity {
     @Column(name = "risk_tier", length = 100)
     private String riskTier;
 
-    @Column(name = "raw_provider_response", columnDefinition = "TEXT")
+    @Column(name = "raw_provider_response", columnDefinition = "LONGTEXT")
     private String rawProviderResponse;
 
     @Column(name = "next_status_check_at")
@@ -145,3 +145,4 @@ public class StatementAnalysis extends AuditableEntity {
     public Instant getCompletedAt() { return completedAt; }
     public void setCompletedAt(Instant completedAt) { this.completedAt = completedAt; }
 }
+

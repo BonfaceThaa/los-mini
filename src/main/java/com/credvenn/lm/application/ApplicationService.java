@@ -71,6 +71,7 @@ public class ApplicationService {
     private final DepositPaymentRepository depositPaymentRepository;
     private final ClientRecordService clientRecordService;
     private final InventoryDeviceAssignmentRepository assignmentRepository;
+    private final ApplicationStatementOtpService applicationStatementOtpService;
     private final ApplicationEventPublisher applicationEventPublisher;
     private final SubscriptionGuardService subscriptionGuardService;
     private final SubscriptionBillingService subscriptionBillingService;
@@ -87,6 +88,7 @@ public class ApplicationService {
             DepositPaymentRepository depositPaymentRepository,
             ClientRecordService clientRecordService,
             InventoryDeviceAssignmentRepository assignmentRepository,
+            ApplicationStatementOtpService applicationStatementOtpService,
             ApplicationEventPublisher applicationEventPublisher,
             SubscriptionGuardService subscriptionGuardService,
             SubscriptionBillingService subscriptionBillingService) {
@@ -101,6 +103,7 @@ public class ApplicationService {
         this.depositPaymentRepository = depositPaymentRepository;
         this.clientRecordService = clientRecordService;
         this.assignmentRepository = assignmentRepository;
+        this.applicationStatementOtpService = applicationStatementOtpService;
         this.applicationEventPublisher = applicationEventPublisher;
         this.subscriptionGuardService = subscriptionGuardService;
         this.subscriptionBillingService = subscriptionBillingService;
@@ -132,7 +135,8 @@ public class ApplicationService {
         application.setApplicantIdType(request.applicantIdType());
         application.setDob(request.dob());
         application.setGender(trimToNull(request.gender()));
-        application.setStatementOtp(trimToNull(request.statementOtp()));
+        String initialStatementOtp = trimToNull(request.statementOtp());
+        application.setStatementOtp(initialStatementOtp);
         application.setRequestedAmount(request.requestedAmount());
         application.setRequestedTermMonths(request.requestedTermMonths());
         var existingClient = clientRecordService.findByTenantIdAndNationalId(tenantId, request.nationalId());
@@ -142,6 +146,9 @@ public class ApplicationService {
         }
         application.setStatus(ApplicationStatus.SUBMITTED);
         application = applicationRepository.save(application);
+        if (initialStatementOtp != null) {
+            applicationStatementOtpService.createInitialOtp(tenantId, application.getId(), initialStatementOtp);
+        }
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, application.getId())) {
             log.info("Loan application persisted and ready for workflow processing");
             changeStatus(application, ApplicationStatus.PENDING_KYC, actor, "Application submitted");
@@ -162,21 +169,30 @@ public class ApplicationService {
         String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, APPLICATION_SORTS, "createdAt");
         String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
         var applicationPage = applicationRepository.findAllByTenantId(tenantId, pageable)
-                .map(application -> toResponse(application, statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId())));
+                .map(application -> toResponse(
+                        application,
+                        statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId()),
+                        applicationStatementOtpService.listViews(tenantId, application.getId())));
         return PagedResponse.fromPage(applicationPage, normalizedSortBy, normalizedSortDir);
     }
 
     @Transactional(readOnly = true)
     public List<ApplicationDtos.LoanRequestApplicationResponse> list(String tenantId) {
         return applicationRepository.findAllByTenantIdOrderByCreatedAtDesc(tenantId).stream()
-                .map(application -> toResponse(application, statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId())))
+                .map(application -> toResponse(
+                        application,
+                        statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId()),
+                        applicationStatementOtpService.listViews(tenantId, application.getId())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public ApplicationDtos.LoanRequestApplicationResponse get(String tenantId, String applicationId) {
         LoanRequestApplication application = getRequired(tenantId, applicationId);
-        return toResponse(application, statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(applicationId));
+        return toResponse(
+                application,
+                statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(applicationId),
+                applicationStatementOtpService.listViews(tenantId, applicationId));
     }
 
     @Transactional
@@ -708,7 +724,8 @@ public class ApplicationService {
 
     static ApplicationDtos.LoanRequestApplicationResponse toResponse(
             LoanRequestApplication application,
-            List<ApplicationStatusHistory> history) {
+            List<ApplicationStatusHistory> history,
+            List<ApplicationStatementOtpService.StatementOtpView> statementOtps) {
         return new ApplicationDtos.LoanRequestApplicationResponse(
                 application.getId(),
                 application.getTenantId(),
@@ -721,6 +738,9 @@ public class ApplicationService {
                 application.getDob(),
                 application.getGender(),
                 application.getStatementOtp(),
+                statementOtps.stream()
+                        .map(ApplicationService::toStatementOtpResponse)
+                        .toList(),
                 application.getRequestedAmount(),
                 application.getRequestedTermMonths(),
                 application.getStatus(),
@@ -758,6 +778,18 @@ public class ApplicationService {
                                 item.getChangedBy(),
                                 item.getReason()))
                         .toList());
+    }
+
+    private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {
+        return new ApplicationDtos.StatementOtpResponse(
+                otp.id(),
+                otp.otp(),
+                otp.status(),
+                otp.source(),
+                otp.createdAt(),
+                otp.testedAt(),
+                otp.usedAt(),
+                otp.failureReason());
     }
 
     private String trimToNull(String value) {
@@ -923,7 +955,6 @@ public class ApplicationService {
         return totalRepaymentAmount.divide(BigDecimal.valueOf(numberOfRepayments), 2, RoundingMode.HALF_UP);
     }
 }
-
 
 
 

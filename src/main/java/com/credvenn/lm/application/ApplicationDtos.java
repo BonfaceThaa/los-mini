@@ -2,6 +2,7 @@ package com.credvenn.lm.application;
 
 import com.credvenn.lm.fineract.FineractDtos;
 import com.credvenn.lm.inventory.DepositType;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -51,16 +52,16 @@ public final class ApplicationDtos {
             @NotNull @Size(min = 1, max = 10) List<@NotBlank @Size(max = 100) String> otps) {
     }
 
-    @Schema(name = "StatementOtpResponse")
+    @Schema(name = "StatementOtpResponse", description = "Statement OTP candidate metadata for a single application")
     public record StatementOtpResponse(
-            String id,
-            String maskedOtp,
-            ApplicationStatementOtpStatus status,
-            ApplicationStatementOtpSource source,
-            Instant createdAt,
-            Instant testedAt,
-            Instant usedAt,
-            String failureReason) {
+            @Schema(description = "Unique statement OTP identifier", example = "otp-1") String id,
+            @Schema(description = "Full OTP value returned for client-side masking", example = "123456") String otp,
+            @Schema(description = "Current lifecycle status of this OTP candidate", example = "PENDING") ApplicationStatementOtpStatus status,
+            @Schema(description = "How the OTP candidate was captured", example = "MANUAL_ADD") ApplicationStatementOtpSource source,
+            @Schema(description = "When the OTP candidate was created", example = "2026-08-29T10:14:00Z") Instant createdAt,
+            @Schema(description = "When the OTP candidate was last tested or reserved for submission", example = "2026-08-29T10:15:30Z") Instant testedAt,
+            @Schema(description = "When the OTP candidate was successfully used", example = "2026-08-29T10:16:10Z") Instant usedAt,
+            @Schema(description = "Failure reason if the OTP candidate failed validation or submission", example = "Invalid OTP") String failureReason) {
     }
 
     @Schema(name = "AddStatementOtpsResponse")
@@ -95,7 +96,7 @@ public final class ApplicationDtos {
             List<FineractDtos.LoanProductResponse> products) {
     }
 
-    @Schema(name = "LoanRequestApplicationResponse")
+    @Schema(name = "LoanRequestApplicationResponse", description = "Loan request application details for the authenticated tenant")
     public record LoanRequestApplicationResponse(
             String id,
             String tenantId,
@@ -107,7 +108,9 @@ public final class ApplicationDtos {
             ApplicantIdType applicantIdType,
             LocalDate dob,
             String gender,
-            String statementOtp,
+            @Schema(description = "Legacy single statement OTP field retained for backward compatibility", example = "432198") String statementOtp,
+            @ArraySchema(schema = @Schema(implementation = StatementOtpResponse.class), arraySchema = @Schema(description = "All statement OTP candidates currently stored for this application"))
+            List<StatementOtpResponse> statementOtps,
             BigDecimal requestedAmount,
             Integer requestedTermMonths,
             ApplicationStatus status,

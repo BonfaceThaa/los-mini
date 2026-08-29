@@ -95,6 +95,7 @@ class ApplicationServiceTest {
         assertEquals(LocalDate.of(1995, 5, 10), response.dob());
         assertEquals("Female", response.gender());
         assertEquals("432198", response.statementOtp());
+        verify(context.applicationStatementOtpService).createInitialOtp("tenant-1", saved.getId(), "432198");
     }
 
     @Test
@@ -145,6 +146,7 @@ class ApplicationServiceTest {
         assertNull(saved.getDob());
         assertNull(saved.getGender());
         assertNull(saved.getStatementOtp());
+        verify(context.applicationStatementOtpService, never()).createInitialOtp(anyString(), anyString(), anyString());
     }
 
     @Test
@@ -364,6 +366,7 @@ class ApplicationServiceTest {
         private final FineractGateway fineractGateway = mock(FineractGateway.class);
         private final DepositPaymentRepository depositPaymentRepository = mock(DepositPaymentRepository.class);
         private final InventoryDeviceAssignmentRepository assignmentRepository = mock(InventoryDeviceAssignmentRepository.class);
+        private final ApplicationStatementOtpService applicationStatementOtpService = mock(ApplicationStatementOtpService.class);
         private final ApplicationEventPublisher applicationEventPublisher = mock(ApplicationEventPublisher.class);
         private final SubscriptionBillingService subscriptionBillingService = mock(SubscriptionBillingService.class);
         private final ClientRecordService clientRecordService = mock(ClientRecordService.class);
@@ -379,10 +382,13 @@ class ApplicationServiceTest {
                 depositPaymentRepository,
                 clientRecordService,
                 assignmentRepository,
+                applicationStatementOtpService,
                 applicationEventPublisher,
                 subscriptionGuardService,
                 subscriptionBillingService);
+
+        private TestContext() {
+            when(applicationStatementOtpService.listViews(anyString(), anyString())).thenReturn(List.of());
+        }
     }
 }
-
-

@@ -45,8 +45,10 @@ public class ApplicationStatementOtpService {
     }
 
     @Transactional(readOnly = true)
-    public List<ApplicationStatementOtp> list(String applicationId) {
-        return repository.findAllByApplicationIdOrderByCreatedAtAsc(applicationId);
+    public List<StatementOtpView> listViews(String tenantId, String applicationId) {
+        return repository.findAllByTenantIdAndApplicationIdOrderByCreatedAtAsc(tenantId, applicationId).stream()
+                .map(this::toView)
+                .toList();
     }
 
     @Transactional
@@ -87,6 +89,18 @@ public class ApplicationStatementOtpService {
             otp.setTestedAt(Instant.now());
             otp.setFailureReason(trimToNull(reason));
         });
+    }
+
+    private StatementOtpView toView(ApplicationStatementOtp otp) {
+        return new StatementOtpView(
+                otp.getId(),
+                secretsEncryptionService.decrypt(otp.getOtpEncrypted()),
+                otp.getStatus(),
+                otp.getSource(),
+                otp.getCreatedAt(),
+                otp.getTestedAt(),
+                otp.getUsedAt(),
+                otp.getFailureReason());
     }
 
     private List<ApplicationStatementOtp> storeOtps(
@@ -143,5 +157,16 @@ public class ApplicationStatementOtpService {
     }
 
     public record ResolvedOtp(String otpId, String otpValue, String maskedOtp) {
+    }
+
+    public record StatementOtpView(
+            String id,
+            String otp,
+            ApplicationStatementOtpStatus status,
+            ApplicationStatementOtpSource source,
+            Instant createdAt,
+            Instant testedAt,
+            Instant usedAt,
+            String failureReason) {
     }
 }

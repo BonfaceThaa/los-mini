@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ApplicationStatementOtpRepository extends JpaRepository<ApplicationStatementOtp, String> {
 
+    List<ApplicationStatementOtp> findAllByTenantIdAndApplicationIdOrderByCreatedAtAsc(String tenantId, String applicationId);
+
     List<ApplicationStatementOtp> findAllByApplicationIdOrderByCreatedAtAsc(String applicationId);
 
     boolean existsByTenantIdAndApplicationIdAndStatusIn(

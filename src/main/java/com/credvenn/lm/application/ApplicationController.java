@@ -80,7 +80,7 @@ public class ApplicationController {
         applicationService.getRequired(actor.tenantId(), applicationId);
         List<ApplicationStatementOtp> added = applicationStatementOtpService.addOtps(actor.tenantId(), applicationId, request.otps());
         boolean retryQueued = statementAnalysisService.queueRetryIfEligible(actor.tenantId(), applicationId, actor.username());
-        List<ApplicationDtos.StatementOtpResponse> otps = applicationStatementOtpService.list(applicationId).stream()
+        List<ApplicationDtos.StatementOtpResponse> otps = applicationStatementOtpService.listViews(actor.tenantId(), applicationId).stream()
                 .map(ApplicationController::toStatementOtpResponse)
                 .toList();
         String message = added.isEmpty()
@@ -157,15 +157,15 @@ public class ApplicationController {
         return ResponseEntity.ok(applicationService.activateLoan(actor.tenantId(), applicationId, actor.username()));
     }
 
-    private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtp otp) {
+    private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {
         return new ApplicationDtos.StatementOtpResponse(
-                otp.getId(),
-                otp.getOtpMasked(),
-                otp.getStatus(),
-                otp.getSource(),
-                otp.getCreatedAt(),
-                otp.getTestedAt(),
-                otp.getUsedAt(),
-                otp.getFailureReason());
+                otp.id(),
+                otp.otp(),
+                otp.status(),
+                otp.source(),
+                otp.createdAt(),
+                otp.testedAt(),
+                otp.usedAt(),
+                otp.failureReason());
     }
 }
