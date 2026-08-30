@@ -1,8 +1,10 @@
 package com.credvenn.lm.statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
@@ -12,6 +14,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.application.ApplicationService;
+import com.credvenn.lm.application.ApplicationStatus;
+import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
@@ -24,7 +29,7 @@ class StatementAnalysisServiceTest {
     @Test
     void manualPassPreservesProviderAnalysisAndAddsSeparateReview() {
         TestContext context = new TestContext();
-        var application = new com.credvenn.lm.application.LoanRequestApplication();
+        var application = application("app-1", ApplicationStatus.STATEMENT_MANUAL_REVIEW);
         StatementAnalysis failedAnalysis = analysis("analysis-1", StatementAnalysisStatus.FAILED, "CLADFY", Instant.parse("2026-07-02T09:00:00Z"));
         StatementReview review = review(
                 "review-1",
@@ -69,9 +74,39 @@ class StatementAnalysisServiceTest {
     }
 
     @Test
+    void queueRetryIfEligibleReturnsFalseWhenApplicationIsPastStatementInProgress() {
+        TestContext context = new TestContext();
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application("app-1", ApplicationStatus.FINERACT_LOAN_ACTIVATED));
+
+        boolean queued = context.service.queueRetryIfEligible("tenant-1", "app-1", "officer");
+
+        assertFalse(queued);
+        verify(context.applicationStatementOtpService, never()).hasAnyActiveOtp(anyString(), anyString());
+        verify(context.documentService, never()).findLatestByApplicationIdAndDocumentType(anyString(), anyString(), anyString());
+        verify(context.processingService, never()).process(anyString(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void runRejectsApplicationsPastStatementInProgress() {
+        TestContext context = new TestContext();
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application("app-1", ApplicationStatus.STATEMENT_VERIFIED));
+
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> context.service.run(
+                "tenant-1",
+                "app-1",
+                "doc-1",
+                "officer",
+                null));
+
+        assertEquals("Statement analysis is not allowed after status STATEMENT_VERIFIED", exception.getMessage());
+        verify(context.documentService, never()).getRequired(anyString(), anyString());
+        verify(context.processingService, never()).process(anyString(), anyString(), anyString(), anyString(), any());
+    }
+
+    @Test
     void getReturnsReviewOnlyWhenManualApprovalExistsWithoutProviderAnalysis() {
         TestContext context = new TestContext();
-        var application = new com.credvenn.lm.application.LoanRequestApplication();
+        var application = application("app-2", ApplicationStatus.STATEMENT_VERIFIED);
         StatementReview review = review(
                 "review-2",
                 "tenant-1",
@@ -93,6 +128,14 @@ class StatementAnalysisServiceTest {
         assertNotNull(response.review());
         assertEquals("review-2", response.review().id());
         assertEquals(StatementEffectiveOutcome.APPROVED, response.effectiveOutcome());
+    }
+
+    private static com.credvenn.lm.application.LoanRequestApplication application(String id, ApplicationStatus status) {
+        var application = new com.credvenn.lm.application.LoanRequestApplication();
+        setField(application, com.credvenn.lm.application.LoanRequestApplication.class, "id", id);
+        application.setTenantId("tenant-1");
+        application.setStatus(status);
+        return application;
     }
 
     private static StatementAnalysis analysis(String id, StatementAnalysisStatus status, String provider, Instant createdAt) {

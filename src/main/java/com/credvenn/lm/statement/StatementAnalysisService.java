@@ -1,7 +1,9 @@
 package com.credvenn.lm.statement;
 
 import com.credvenn.lm.application.ApplicationStatementOtpService;
+import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.application.ApplicationService;
+import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
@@ -63,7 +65,8 @@ public class StatementAnalysisService {
             String actor,
             String simulateOutcome) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            applicationService.getRequired(tenantId, applicationId);
+            LoanRequestApplication application = applicationService.getRequired(tenantId, applicationId);
+            assertStatementAnalysisAllowed(application);
             var document = documentService.getRequired(tenantId, documentId);
             if (!document.getApplicationId().equals(applicationId)) {
                 throw new NotFoundException("Document does not belong to the loan request application");
@@ -93,7 +96,11 @@ public class StatementAnalysisService {
     @Transactional
     public boolean queueRetryIfEligible(String tenantId, String applicationId, String actor) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            applicationService.getRequired(tenantId, applicationId);
+            LoanRequestApplication application = applicationService.getRequired(tenantId, applicationId);
+            if (!isStatementAnalysisAllowed(application)) {
+                log.info("Skipping statement analysis retry because application status={} is past statement processing", application.getStatus());
+                return false;
+            }
             if (requiresStatementOtp() && !applicationStatementOtpService.hasAnyActiveOtp(tenantId, applicationId)) {
                 return false;
             }
@@ -172,6 +179,29 @@ public class StatementAnalysisService {
         return statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc(applicationId).stream()
                 .filter(analysis -> !LEGACY_MANUAL_OVERRIDE_PROVIDER.equalsIgnoreCase(analysis.getProvider()))
                 .findFirst();
+    }
+
+    private void assertStatementAnalysisAllowed(LoanRequestApplication application) {
+        if (!isStatementAnalysisAllowed(application)) {
+            throw new BadRequestException("Statement analysis is not allowed after status " + application.getStatus());
+        }
+    }
+
+    private boolean isStatementAnalysisAllowed(LoanRequestApplication application) {
+        ApplicationStatus status = application.getStatus();
+        return status == null || switch (status) {
+            case STATEMENT_VERIFIED,
+                    OFFERS_READY,
+                    OFFER_SELECTED,
+                    CONSENT_CAPTURED,
+                    INTERNAL_APPROVED,
+                    FINERACT_LOAN_CREATED_PENDING_DEVICE,
+                    DEVICE_ASSIGNED,
+                    FINERACT_LOAN_ACTIVATED,
+                    LOAN_CLOSED,
+                    REJECTED -> false;
+            default -> true;
+        };
     }
 
     private Optional<StatementReview> resolveReview(String applicationId, StatementAnalysis analysis) {
