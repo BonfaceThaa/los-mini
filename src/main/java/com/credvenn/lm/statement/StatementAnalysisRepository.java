@@ -12,6 +12,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface StatementAnalysisRepository extends JpaRepository<StatementAnalysis, String> {
 
+    Optional<StatementAnalysis> findByIdAndTenantId(String id, String tenantId);
+
     Optional<StatementAnalysis> findFirstByApplicationIdOrderByCreatedAtDesc(String applicationId);
 
     List<StatementAnalysis> findAllByApplicationIdOrderByCreatedAtDesc(String applicationId);

@@ -16,15 +16,32 @@ import static org.mockito.Mockito.when;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.application.ApplicationStatus;
 import com.credvenn.lm.common.exception.BadRequestException;
-import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 class StatementAnalysisServiceTest {
+
+    @Test
+    void runStartsAnIndependentTransactionForAfterCommitDispatch() throws NoSuchMethodException {
+        Method method = StatementAnalysisService.class.getMethod(
+                "run",
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class);
+
+        assertEquals(Propagation.REQUIRES_NEW, method.getAnnotation(Transactional.class).propagation());
+    }
 
     @Test
     void manualPassPreservesProviderAnalysisAndAddsSeparateReview() {
@@ -81,9 +98,9 @@ class StatementAnalysisServiceTest {
         boolean queued = context.service.queueRetryIfEligible("tenant-1", "app-1", "officer");
 
         assertFalse(queued);
-        verify(context.applicationStatementOtpService, never()).hasAnyActiveOtp(anyString(), anyString());
+        verify(context.applicationStatementOtpService, never()).findFirstPendingOtpThatOpensDocument(anyString(), anyString(), anyString());
         verify(context.documentService, never()).findLatestByApplicationIdAndDocumentType(anyString(), anyString(), anyString());
-        verify(context.processingService, never()).process(anyString(), anyString(), anyString(), anyString(), any());
+        verify(context.applicationEventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -100,9 +117,64 @@ class StatementAnalysisServiceTest {
 
         assertEquals("Statement analysis is not allowed after status STATEMENT_VERIFIED", exception.getMessage());
         verify(context.documentService, never()).getRequired(anyString(), anyString());
-        verify(context.processingService, never()).process(anyString(), anyString(), anyString(), anyString(), any());
+        verify(context.applicationEventPublisher, never()).publishEvent(any());
     }
 
+    @Test
+    void runRejectsWhenNoPendingOtpCanOpenDocument() {
+        TestContext context = new TestContext();
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application("app-1", ApplicationStatus.STATEMENT_PENDING));
+        var document = new com.credvenn.lm.document.ApplicationDocument();
+        setField(document, com.credvenn.lm.document.ApplicationDocument.class, "id", "doc-1");
+        document.setApplicationId("app-1");
+        when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
+        when(context.statementProviderRegistry.currentProvider()).thenReturn(context.provider);
+        when(context.provider.providerCode()).thenReturn("CLADFY");
+        when(context.applicationStatementOtpService.findFirstPendingOtpThatOpensDocument("tenant-1", "app-1", "doc-1")).thenReturn(Optional.empty());
+
+        BadRequestException exception = assertThrows(BadRequestException.class, () -> context.service.run(
+                "tenant-1",
+                "app-1",
+                "doc-1",
+                "officer",
+                null));
+
+        assertEquals("No pending statement OTP can open the statement document", exception.getMessage());
+        verify(context.applicationEventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void runPublishesSavedAnalysisIdForAfterCommitProcessing() {
+        TestContext context = new TestContext();
+        var application = application("app-1", ApplicationStatus.STATEMENT_PENDING);
+        var document = new com.credvenn.lm.document.ApplicationDocument();
+        setField(document, com.credvenn.lm.document.ApplicationDocument.class, "id", "doc-1");
+        document.setApplicationId("app-1");
+
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
+        when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
+        when(context.statementProviderRegistry.currentProvider()).thenReturn(context.provider);
+        when(context.provider.providerCode()).thenReturn("CLADFY");
+        when(context.applicationStatementOtpService.findFirstPendingOtpThatOpensDocument("tenant-1", "app-1", "doc-1"))
+                .thenReturn(Optional.of(new com.credvenn.lm.application.ApplicationStatementOtpService.ResolvedOtp("otp-1", "123456", "****56")));
+        when(context.statementAnalysisRepository.existsByApplicationIdAndStatusIn(anyString(), any())).thenReturn(false);
+        when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> {
+            StatementAnalysis analysis = invocation.getArgument(0);
+            setField(analysis, StatementAnalysis.class, "id", "analysis-1");
+            return analysis;
+        });
+
+        context.service.run("tenant-1", "app-1", "doc-1", "officer", null);
+
+        ArgumentCaptor<StatementAnalysisRequestedEvent> eventCaptor = ArgumentCaptor.forClass(StatementAnalysisRequestedEvent.class);
+        verify(context.applicationEventPublisher).publishEvent(eventCaptor.capture());
+        StatementAnalysisRequestedEvent event = eventCaptor.getValue();
+        assertEquals("tenant-1", event.tenantId());
+        assertEquals("app-1", event.applicationId());
+        assertEquals("doc-1", event.documentId());
+        assertEquals("analysis-1", event.analysisId());
+        assertEquals("officer", event.actor());
+    }
     @Test
     void getReturnsReviewOnlyWhenManualApprovalExistsWithoutProviderAnalysis() {
         TestContext context = new TestContext();
@@ -197,8 +269,9 @@ class StatementAnalysisServiceTest {
 
     private static final class TestContext {
         private final StatementAnalysisRepository statementAnalysisRepository = mock(StatementAnalysisRepository.class);
-        private final StatementAnalysisProcessingService processingService = mock(StatementAnalysisProcessingService.class);
+        private final ApplicationEventPublisher applicationEventPublisher = mock(ApplicationEventPublisher.class);
         private final StatementProviderRegistry statementProviderRegistry = mock(StatementProviderRegistry.class);
+        private final StatementAnalysisProvider provider = mock(StatementAnalysisProvider.class);
         private final ApplicationService applicationService = mock(ApplicationService.class);
         private final DocumentService documentService = mock(DocumentService.class);
         private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
@@ -207,7 +280,7 @@ class StatementAnalysisServiceTest {
         private final ObjectMapper objectMapper = new ObjectMapper();
         private final StatementAnalysisService service = new StatementAnalysisService(
                 statementAnalysisRepository,
-                processingService,
+                applicationEventPublisher,
                 statementProviderRegistry,
                 applicationService,
                 documentService,

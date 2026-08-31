@@ -11,6 +11,11 @@ public interface ApplicationStatementOtpRepository extends JpaRepository<Applica
 
     List<ApplicationStatementOtp> findAllByApplicationIdOrderByCreatedAtAsc(String applicationId);
 
+    List<ApplicationStatementOtp> findAllByTenantIdAndApplicationIdAndStatusOrderByCreatedAtAsc(
+            String tenantId,
+            String applicationId,
+            ApplicationStatementOtpStatus status);
+
     boolean existsByTenantIdAndApplicationIdAndStatusIn(
             String tenantId,
             String applicationId,

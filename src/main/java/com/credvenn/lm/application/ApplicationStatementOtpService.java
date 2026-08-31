@@ -1,6 +1,9 @@
 package com.credvenn.lm.application;
 
+import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.document.DocumentService;
 import com.credvenn.lm.security.SecretsEncryptionService;
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -13,14 +16,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ApplicationStatementOtpService {
 
+    private static final String OTP_OPEN_FAILURE_REASON = "PDF password did not open document";
+
     private final ApplicationStatementOtpRepository repository;
     private final SecretsEncryptionService secretsEncryptionService;
+    private final DocumentService documentService;
+    private final StatementPdfPasswordVerifier statementPdfPasswordVerifier;
 
     public ApplicationStatementOtpService(
             ApplicationStatementOtpRepository repository,
-            SecretsEncryptionService secretsEncryptionService) {
+            SecretsEncryptionService secretsEncryptionService,
+            DocumentService documentService,
+            StatementPdfPasswordVerifier statementPdfPasswordVerifier) {
         this.repository = repository;
         this.secretsEncryptionService = secretsEncryptionService;
+        this.documentService = documentService;
+        this.statementPdfPasswordVerifier = statementPdfPasswordVerifier;
     }
 
     @Transactional
@@ -45,6 +56,19 @@ public class ApplicationStatementOtpService {
     }
 
     @Transactional(readOnly = true)
+    public boolean hasPendingOtp(String tenantId, String applicationId) {
+        return repository.existsByTenantIdAndApplicationIdAndStatusIn(
+                tenantId,
+                applicationId,
+                Set.of(ApplicationStatementOtpStatus.PENDING));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ResolvedOtp> findFirstPendingOtpThatOpensDocument(String tenantId, String applicationId, String documentId) {
+        return resolveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId, false);
+    }
+
+    @Transactional(readOnly = true)
     public List<StatementOtpView> listViews(String tenantId, String applicationId) {
         return repository.findAllByTenantIdAndApplicationIdOrderByCreatedAtAsc(tenantId, applicationId).stream()
                 .map(this::toView)
@@ -52,23 +76,13 @@ public class ApplicationStatementOtpService {
     }
 
     @Transactional
+    public Optional<ResolvedOtp> reserveFirstPendingOtpThatOpensDocument(String tenantId, String applicationId, String documentId) {
+        return resolveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId, true);
+    }
+
+    @Transactional
     public Optional<ResolvedOtp> reserveNextOtp(String tenantId, String applicationId, String documentId) {
-        Optional<ApplicationStatementOtp> next = repository.findFirstByTenantIdAndApplicationIdAndStatusOrderByCreatedAtAsc(
-                tenantId,
-                applicationId,
-                ApplicationStatementOtpStatus.PENDING);
-        if (next.isEmpty()) {
-            return Optional.empty();
-        }
-        ApplicationStatementOtp otp = next.get();
-        otp.setStatus(ApplicationStatementOtpStatus.SUBMITTED);
-        otp.setUsedForDocumentId(documentId);
-        otp.setTestedAt(Instant.now());
-        otp.setFailureReason(null);
-        return Optional.of(new ResolvedOtp(
-                otp.getId(),
-                secretsEncryptionService.decrypt(otp.getOtpEncrypted()),
-                otp.getOtpMasked()));
+        return reserveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId);
     }
 
     @Transactional
@@ -89,6 +103,49 @@ public class ApplicationStatementOtpService {
             otp.setTestedAt(Instant.now());
             otp.setFailureReason(trimToNull(reason));
         });
+    }
+
+    private Optional<ResolvedOtp> resolveFirstPendingOtpThatOpensDocument(
+            String tenantId,
+            String applicationId,
+            String documentId,
+            boolean mutateStatuses) {
+        var document = documentService.getRequired(tenantId, documentId);
+        if (!applicationId.equals(document.getApplicationId())) {
+            throw new BadRequestException("Document does not belong to the loan request application");
+        }
+        byte[] pdfBytes = loadPdfBytes(tenantId, documentId);
+        List<ApplicationStatementOtp> pendingOtps = repository.findAllByTenantIdAndApplicationIdAndStatusOrderByCreatedAtAsc(
+                tenantId,
+                applicationId,
+                ApplicationStatementOtpStatus.PENDING);
+        for (ApplicationStatementOtp otp : pendingOtps) {
+            String otpValue = secretsEncryptionService.decrypt(otp.getOtpEncrypted());
+            if (statementPdfPasswordVerifier.canOpen(pdfBytes, otpValue)) {
+                if (mutateStatuses) {
+                    otp.setStatus(ApplicationStatementOtpStatus.SUBMITTED);
+                    otp.setUsedForDocumentId(documentId);
+                    otp.setTestedAt(Instant.now());
+                    otp.setFailureReason(null);
+                }
+                return Optional.of(new ResolvedOtp(otp.getId(), otpValue, otp.getOtpMasked()));
+            }
+            if (mutateStatuses) {
+                otp.setStatus(ApplicationStatementOtpStatus.FAILED);
+                otp.setUsedForDocumentId(documentId);
+                otp.setTestedAt(Instant.now());
+                otp.setFailureReason(OTP_OPEN_FAILURE_REASON);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private byte[] loadPdfBytes(String tenantId, String documentId) {
+        try (var inputStream = documentService.loadContent(tenantId, documentId).getInputStream()) {
+            return inputStream.readAllBytes();
+        } catch (IOException ex) {
+            throw new BadRequestException("Unable to read stored statement document");
+        }
     }
 
     private StatementOtpView toView(ApplicationStatementOtp otp) {

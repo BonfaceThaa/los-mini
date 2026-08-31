@@ -1,6 +1,7 @@
 package com.credvenn.lm.statement;
 
 import com.credvenn.lm.application.LoanRequestApplication;
+import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
@@ -63,8 +64,8 @@ public class HttpCladfyGateway implements CladfyGateway {
         log.info(
                 "Cladfy client ready clientId={} phoneNumber={} nationalId={}",
                 client.id(),
-                client.phone_number(),
-                application.getNationalId());
+                LoggingContext.maskPhone(client.phone_number()),
+                LoggingContext.maskNationalId(application.getNationalId()));
 
         try {
             Resource resource = documentService.loadContent(application.getTenantId(), document.getId());
@@ -79,8 +80,8 @@ public class HttpCladfyGateway implements CladfyGateway {
             body.add("provider", providerCode);
             body.add("webhook", buildWebhookUrl());
             body.add("national_id", application.getNationalId());
-            if (application.getStatementOtp() != null && !application.getStatementOtp().isBlank()) {
-                body.add("password", application.getStatementOtp());
+            if (statementOtp != null && !statementOtp.isBlank()) {
+                body.add("password", statementOtp);
             }
 
             CladfyDtos.DocumentUploadResponse upload = logAndParseBody(
@@ -225,7 +226,7 @@ public class HttpCladfyGateway implements CladfyGateway {
                     "Cladfy create client response clientId={} fullName={} phoneNumber={}",
                     response == null ? null : response.id(),
                     response == null ? null : response.full_name(),
-                    response == null ? null : response.phone_number());
+                    response == null ? null : LoggingContext.maskPhone(response.phone_number()));
             return response;
         } catch (HttpClientErrorException ex) {
             if (ex.getStatusCode() == HttpStatus.CONFLICT) {
@@ -374,6 +375,11 @@ public class HttpCladfyGateway implements CladfyGateway {
         return null;
     }
 }
+
+
+
+
+
 
 
 

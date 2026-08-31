@@ -107,14 +107,14 @@ public class InboundStatementProcessor {
             }
 
             LoanRequestApplication application = matches.get(0);
-            if (!hasStatementOtp(application)) {
+            if (!hasPendingStatementOtp(application)) {
                 receipt.setTenantId(application.getTenantId());
                 receipt.setMatchedApplicationId(application.getId());
                 receipt.setMatchStatus(InboundStatementMatchStatus.BLOCKED_MISSING_STATEMENT_OTP);
-                receipt.setFailureReason("Matched application does not have statement OTP");
+                receipt.setFailureReason("Matched application does not have a pending statement OTP");
                 receipt.setBackgroundError(null);
                 receipt.setProcessedAt(Instant.now());
-                log.warn("Inbound statement matched applicationId={} but statement OTP is missing", application.getId());
+                log.warn("Inbound statement matched applicationId={} but no pending statement OTP is available", application.getId());
                 return;
             }
             attachAndTrigger(receipt, application, actor, InboundStatementMatchStatus.MATCHED, null);
@@ -162,11 +162,11 @@ public class InboundStatementProcessor {
         }
         log.info("Retrying inbound statement receiptCount={} for applicationId={}", waitingReceipts.size(), application.getId());
         for (InboundStatementReceipt receipt : waitingReceipts) {
-            if (!hasStatementOtp(application)) {
+            if (!hasPendingStatementOtp(application)) {
                 receipt.setTenantId(application.getTenantId());
                 receipt.setMatchedApplicationId(application.getId());
                 receipt.setMatchStatus(InboundStatementMatchStatus.BLOCKED_MISSING_STATEMENT_OTP);
-                receipt.setFailureReason("Matched application does not have statement OTP");
+                receipt.setFailureReason("Matched application does not have a pending statement OTP");
                 receipt.setBackgroundError(null);
                 receipt.setProcessedAt(Instant.now());
                 continue;
@@ -237,8 +237,8 @@ public class InboundStatementProcessor {
         return value == null ? "" : value.replaceAll("\\D", "");
     }
 
-    private boolean hasStatementOtp(LoanRequestApplication application) {
-        return applicationStatementOtpService.hasAnyActiveOtp(application.getTenantId(), application.getId());
+    private boolean hasPendingStatementOtp(LoanRequestApplication application) {
+        return applicationStatementOtpService.hasPendingOtp(application.getTenantId(), application.getId());
     }
 
     private String maskPhoneToken(String phoneToken) {

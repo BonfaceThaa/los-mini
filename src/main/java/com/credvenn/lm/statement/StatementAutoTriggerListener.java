@@ -1,5 +1,6 @@
 package com.credvenn.lm.statement;
 
+import com.credvenn.lm.common.exception.BadRequestException;
 import com.credvenn.lm.tenant.TenantService;
 import com.credvenn.lm.tenant.TenantStatementAnalysisMode;
 import java.util.Locale;
@@ -58,11 +59,19 @@ public class StatementAutoTriggerListener {
                     autoTypes);
             return;
         }
-        log.info(
-                "Auto-triggering statement analysis for applicationId={} documentId={} documentType={}",
-                event.applicationId(),
-                event.documentId(),
-                event.documentType());
-        statementAnalysisService.run(event.tenantId(), event.applicationId(), event.documentId(), event.actor(), null);
+        try {
+            log.info(
+                    "Auto-triggering statement analysis for applicationId={} documentId={} documentType={}",
+                    event.applicationId(),
+                    event.documentId(),
+                    event.documentType());
+            statementAnalysisService.run(event.tenantId(), event.applicationId(), event.documentId(), event.actor(), null);
+        } catch (BadRequestException ex) {
+            log.info(
+                    "Skipping auto-trigger for applicationId={} documentId={} because {}",
+                    event.applicationId(),
+                    event.documentId(),
+                    ex.getMessage());
+        }
     }
 }

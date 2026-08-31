@@ -16,7 +16,9 @@ import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -27,7 +29,7 @@ public class StatementAnalysisService {
     private static final String MPESA_STATEMENT_DOCUMENT_TYPE = "MPESA_STATEMENT";
 
     private final StatementAnalysisRepository statementAnalysisRepository;
-    private final StatementAnalysisProcessingService processingService;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final StatementProviderRegistry statementProviderRegistry;
     private final ApplicationService applicationService;
     private final DocumentService documentService;
@@ -38,7 +40,7 @@ public class StatementAnalysisService {
 
     public StatementAnalysisService(
             StatementAnalysisRepository statementAnalysisRepository,
-            StatementAnalysisProcessingService processingService,
+            ApplicationEventPublisher applicationEventPublisher,
             StatementProviderRegistry statementProviderRegistry,
             ApplicationService applicationService,
             DocumentService documentService,
@@ -47,7 +49,7 @@ public class StatementAnalysisService {
             ApplicationStatementOtpService applicationStatementOtpService,
             ObjectMapper objectMapper) {
         this.statementAnalysisRepository = statementAnalysisRepository;
-        this.processingService = processingService;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.statementProviderRegistry = statementProviderRegistry;
         this.applicationService = applicationService;
         this.documentService = documentService;
@@ -57,7 +59,7 @@ public class StatementAnalysisService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public StatementDtos.StatementAssessmentResponse run(
             String tenantId,
             String applicationId,
@@ -71,9 +73,7 @@ public class StatementAnalysisService {
             if (!document.getApplicationId().equals(applicationId)) {
                 throw new NotFoundException("Document does not belong to the loan request application");
             }
-            if (requiresStatementOtp() && !applicationStatementOtpService.hasAnyActiveOtp(tenantId, applicationId)) {
-                throw new BadRequestException("Statement OTP is required before submitting the statement to the configured provider");
-            }
+            assertStatementOtpReadyForSubmission(tenantId, applicationId, documentId, simulateOutcome);
             if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
                     StatementAnalysisStatus.PENDING,
                     StatementAnalysisStatus.IN_PROGRESS))) {
@@ -88,7 +88,13 @@ public class StatementAnalysisService {
             analysis.setStatus(StatementAnalysisStatus.PENDING);
             analysis = statementAnalysisRepository.save(analysis);
             log.info("Queued statement analysis for documentId={}", documentId);
-            processingService.process(tenantId, applicationId, documentId, actor, simulateOutcome);
+            applicationEventPublisher.publishEvent(new StatementAnalysisRequestedEvent(
+                    tenantId,
+                    applicationId,
+                    documentId,
+                    analysis.getId(),
+                    actor,
+                    simulateOutcome));
             return buildResponse(applicationId, Optional.of(analysis));
         }
     }
@@ -99,9 +105,6 @@ public class StatementAnalysisService {
             LoanRequestApplication application = applicationService.getRequired(tenantId, applicationId);
             if (!isStatementAnalysisAllowed(application)) {
                 log.info("Skipping statement analysis retry because application status={} is past statement processing", application.getStatus());
-                return false;
-            }
-            if (requiresStatementOtp() && !applicationStatementOtpService.hasAnyActiveOtp(tenantId, applicationId)) {
                 return false;
             }
             if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
@@ -116,6 +119,7 @@ public class StatementAnalysisService {
                 return false;
             }
             return documentService.findLatestByApplicationIdAndDocumentType(tenantId, applicationId, MPESA_STATEMENT_DOCUMENT_TYPE)
+                    .filter(document -> isStatementOtpReadyForSubmission(tenantId, applicationId, document.getId(), null))
                     .map(document -> {
                         run(tenantId, applicationId, document.getId(), actor, null);
                         return true;
@@ -202,6 +206,19 @@ public class StatementAnalysisService {
                     REJECTED -> false;
             default -> true;
         };
+    }
+
+    private void assertStatementOtpReadyForSubmission(String tenantId, String applicationId, String documentId, String simulateOutcome) {
+        if (!isStatementOtpReadyForSubmission(tenantId, applicationId, documentId, simulateOutcome)) {
+            throw new BadRequestException("No pending statement OTP can open the statement document");
+        }
+    }
+
+    private boolean isStatementOtpReadyForSubmission(String tenantId, String applicationId, String documentId, String simulateOutcome) {
+        if (normalizeSimulateOutcome(simulateOutcome) != null || !requiresStatementOtp()) {
+            return true;
+        }
+        return applicationStatementOtpService.findFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId).isPresent();
     }
 
     private Optional<StatementReview> resolveReview(String applicationId, StatementAnalysis analysis) {

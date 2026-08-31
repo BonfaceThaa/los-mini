@@ -3,6 +3,7 @@ package com.credvenn.lm.statement;
 import com.credvenn.lm.application.ApplicationStatementOtpService;
 import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.document.ApplicationDocument;
 import com.credvenn.lm.document.DocumentService;
@@ -51,16 +52,27 @@ public class StatementAnalysisProcessingService {
 
     @Async
     @Transactional
-    public void process(String tenantId, String applicationId, String documentId, String actor, String simulateOutcome) {
+    public void process(String tenantId, String analysisId, String actor, String simulateOutcome) {
+        StatementAnalysis analysis = statementAnalysisRepository.findByIdAndTenantId(analysisId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Statement analysis not found"));
+        String applicationId = analysis.getApplicationId();
+        String documentId = analysis.getSourceDocumentId();
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            log.info(
-                    "Starting asynchronous statement analysis using provider={} documentId={}"
-                    , statementProviderRegistry.currentProvider().providerCode(),
-                    documentId);
-            applicationService.handleStatementInProgress(tenantId, applicationId, actor);
-            ApplicationDocument document = documentService.getRequired(tenantId, documentId);
-            StatementAnalysis analysis = statementAnalysisRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId).orElseGet(StatementAnalysis::new);
             StatementAnalysisProvider provider = statementProviderRegistry.currentProvider();
+            log.info(
+                    "Starting asynchronous statement analysis using provider={} documentId={}",
+                    provider.providerCode(),
+                    documentId);
+            ApplicationDocument document = documentService.getRequired(tenantId, documentId);
+            var application = applicationService.getRequired(tenantId, applicationId);
+            StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
+            ApplicationStatementOtpService.ResolvedOtp resolvedOtp = null;
+            if (simulatedDecision == null && provider.supportsAsyncWebhookCompletion()) {
+                resolvedOtp = applicationStatementOtpService.reserveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId)
+                        .orElseThrow(() -> new BadRequestException("No pending statement OTP can open the statement document"));
+            }
+
+            applicationService.handleStatementInProgress(tenantId, applicationId, actor);
             analysis.setTenantId(tenantId);
             analysis.setApplicationId(applicationId);
             analysis.setSourceDocumentId(documentId);
@@ -68,16 +80,11 @@ public class StatementAnalysisProcessingService {
             analysis.setStatus(StatementAnalysisStatus.IN_PROGRESS);
             statementAnalysisRepository.save(analysis);
 
-            var application = applicationService.getRequired(tenantId, applicationId);
-            StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
             if (simulatedDecision != null) {
                 applyDecision(tenantId, applicationId, actor, analysis, simulatedDecision, false);
                 return;
             }
             if (provider.supportsAsyncWebhookCompletion()) {
-                ApplicationStatementOtpService.ResolvedOtp resolvedOtp = applicationStatementOtpService
-                        .reserveNextOtp(tenantId, applicationId, documentId)
-                        .orElseThrow(() -> new BadRequestException("No pending statement OTP is available for submission"));
                 analysis.setStatementOtpId(resolvedOtp.otpId());
                 StatementAnalysisSubmission submission = provider.submit(application, document, resolvedOtp.otpValue());
                 analysis.setProvider(submission.provider());
@@ -90,8 +97,8 @@ public class StatementAnalysisProcessingService {
                 statementAnalysisRepository.save(analysis);
                 cladfyStatusPollingService.scheduleInitialStatusCheck(analysis);
                 log.info(
-                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={} otpId={}"
-                        , submission.provider(),
+                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={} otpId={}",
+                        submission.provider(),
                         submission.externalClientId(),
                         submission.externalDocumentId(),
                         resolvedOtp.otpId());
@@ -126,8 +133,8 @@ public class StatementAnalysisProcessingService {
         statementAnalysisRepository.save(analysis);
         recordSystemOutcome(tenantId, applicationId, analysis, actor, decision.status(), decision.summary());
         log.info(
-                "Statement analysis completed with status={} affordabilityScore={} recommendation={}"
-                , decision.status(),
+                "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
+                decision.status(),
                 decision.affordabilityScore(),
                 decision.recommendation());
         if (chargeProviderCompletion) {
