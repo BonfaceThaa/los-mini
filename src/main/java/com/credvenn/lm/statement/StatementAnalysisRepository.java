@@ -14,6 +14,17 @@ public interface StatementAnalysisRepository extends JpaRepository<StatementAnal
 
     Optional<StatementAnalysis> findByIdAndTenantId(String id, String tenantId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select analysis
+            from StatementAnalysis analysis
+            where analysis.id = :id
+              and analysis.tenantId = :tenantId
+            """)
+    Optional<StatementAnalysis> findForSubmissionUpdate(
+            @Param("id") String id,
+            @Param("tenantId") String tenantId);
+
     Optional<StatementAnalysis> findFirstByApplicationIdOrderByCreatedAtDesc(String applicationId);
 
     List<StatementAnalysis> findAllByApplicationIdOrderByCreatedAtDesc(String applicationId);

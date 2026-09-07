@@ -85,6 +85,17 @@ public class ApplicationStatementOtpService {
         return reserveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<ResolvedOtp> findReservedOtp(String tenantId, String otpId) {
+        return repository.findByIdAndTenantId(otpId, tenantId)
+                .filter(otp -> otp.getStatus() == ApplicationStatementOtpStatus.SUBMITTED
+                        || otp.getStatus() == ApplicationStatementOtpStatus.SUCCESSFUL)
+                .map(otp -> new ResolvedOtp(
+                        otp.getId(),
+                        secretsEncryptionService.decrypt(otp.getOtpEncrypted()),
+                        otp.getOtpMasked()));
+    }
+
     @Transactional
     public void markSuccessful(String tenantId, String otpId, String documentId) {
         repository.findByIdAndTenantId(otpId, tenantId).ifPresent(otp -> {

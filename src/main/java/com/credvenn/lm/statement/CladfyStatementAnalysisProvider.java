@@ -3,6 +3,8 @@ package com.credvenn.lm.statement;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.document.ApplicationDocument;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -32,6 +34,14 @@ public class CladfyStatementAnalysisProvider implements StatementAnalysisProvide
     @Override
     public StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp) {
         return cladfyGateway.submit(application, document, statementOtp);
+    }
+
+    @Override
+    public Optional<StatementAnalysisSubmission> recoverSubmission(
+            LoanRequestApplication application,
+            ApplicationDocument document,
+            Instant notBefore) {
+        return cladfyGateway.recoverSubmission(application, document, notBefore);
     }
 
     public StatementDecision toDecision(CladfyDtos.AnalysisResultsResponse analysis, CladfyDtos.CreditScoreResponse score) {

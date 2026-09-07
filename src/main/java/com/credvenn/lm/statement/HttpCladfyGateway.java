@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
@@ -119,6 +120,59 @@ public class HttpCladfyGateway implements CladfyGateway {
         } catch (IOException ex) {
             throw new BadRequestException("Unable to read stored statement document");
         }
+    }
+
+    @Override
+    public Optional<StatementAnalysisSubmission> recoverSubmission(
+            LoanRequestApplication application,
+            ApplicationDocument sourceDocument,
+            Instant notBefore) {
+        CladfyDtos.ClientResponse client = createOrReuseClient(application);
+        if (client == null || client.id() == null) {
+            return Optional.empty();
+        }
+        CladfyDtos.AnalysisResultsResponse results;
+        try {
+            results = fetchAnalysisResults(String.valueOf(client.id()));
+        } catch (HttpClientErrorException.NotFound ex) {
+            log.info("No existing Cladfy document found for retry clientId={}", client.id());
+            return Optional.empty();
+        }
+        CladfyDtos.Document existingDocument = results == null ? null : results.document();
+        if (existingDocument == null || existingDocument.id() == null) {
+            return Optional.empty();
+        }
+        String expectedProvider = resolveProviderCode(sourceDocument.getDocumentType());
+        if (existingDocument.provider() == null
+                || !expectedProvider.equalsIgnoreCase(existingDocument.provider())) {
+            return Optional.empty();
+        }
+        Instant createdAt = parseInstant(existingDocument.created_at());
+        if (createdAt == null || notBefore == null || createdAt.isBefore(notBefore)) {
+            log.info(
+                    "Ignoring existing Cladfy document outside recovery window clientId={} documentId={} createdAt={} notBefore={}",
+                    client.id(),
+                    existingDocument.id(),
+                    createdAt,
+                    notBefore);
+            return Optional.empty();
+        }
+        log.info(
+                "Recovered existing Cladfy document clientId={} documentId={} createdAt={}",
+                client.id(),
+                existingDocument.id(),
+                createdAt);
+        return Optional.of(new StatementAnalysisSubmission(
+                "CLADFY",
+                existingDocument.status(),
+                String.valueOf(client.id()),
+                String.valueOf(existingDocument.id()),
+                null,
+                "Recovered existing Cladfy statement submission",
+                results.toString(),
+                null,
+                null,
+                null));
     }
 
     @Override

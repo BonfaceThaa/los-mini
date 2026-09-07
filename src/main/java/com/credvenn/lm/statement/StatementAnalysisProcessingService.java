@@ -1,178 +1,156 @@
 package com.credvenn.lm.statement;
 
-import com.credvenn.lm.application.ApplicationStatementOtpService;
-import com.credvenn.lm.application.ApplicationService;
 import com.credvenn.lm.common.exception.BadRequestException;
-import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
-import com.credvenn.lm.document.ApplicationDocument;
-import com.credvenn.lm.document.DocumentService;
-import com.credvenn.lm.subscription.SubscriptionBillingService;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 
 @Service
 public class StatementAnalysisProcessingService {
 
     private static final Logger log = LoggerFactory.getLogger(StatementAnalysisProcessingService.class);
+    private static final int MAX_SUBMISSION_ATTEMPTS = 3;
 
-    private final StatementAnalysisRepository statementAnalysisRepository;
     private final StatementProviderRegistry statementProviderRegistry;
-    private final ApplicationService applicationService;
-    private final DocumentService documentService;
-    private final SubscriptionBillingService subscriptionBillingService;
-    private final CladfyStatusPollingService cladfyStatusPollingService;
-    private final StatementReviewService statementReviewService;
-    private final ApplicationStatementOtpService applicationStatementOtpService;
+    private final StatementSubmissionPreparationService preparationService;
+    private final StatementSubmissionCompletionService completionService;
 
     public StatementAnalysisProcessingService(
-            StatementAnalysisRepository statementAnalysisRepository,
             StatementProviderRegistry statementProviderRegistry,
-            ApplicationService applicationService,
-            DocumentService documentService,
-            SubscriptionBillingService subscriptionBillingService,
-            CladfyStatusPollingService cladfyStatusPollingService,
-            StatementReviewService statementReviewService,
-            ApplicationStatementOtpService applicationStatementOtpService) {
-        this.statementAnalysisRepository = statementAnalysisRepository;
+            StatementSubmissionPreparationService preparationService,
+            StatementSubmissionCompletionService completionService) {
         this.statementProviderRegistry = statementProviderRegistry;
-        this.applicationService = applicationService;
-        this.documentService = documentService;
-        this.subscriptionBillingService = subscriptionBillingService;
-        this.cladfyStatusPollingService = cladfyStatusPollingService;
-        this.statementReviewService = statementReviewService;
-        this.applicationStatementOtpService = applicationStatementOtpService;
+        this.preparationService = preparationService;
+        this.completionService = completionService;
     }
 
     @Async
-    @Transactional
     public void process(String tenantId, String analysisId, String actor, String simulateOutcome) {
-        StatementAnalysis analysis = statementAnalysisRepository.findByIdAndTenantId(analysisId, tenantId)
-                .orElseThrow(() -> new NotFoundException("Statement analysis not found"));
-        String applicationId = analysis.getApplicationId();
-        String documentId = analysis.getSourceDocumentId();
-        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
-            StatementAnalysisProvider provider = statementProviderRegistry.currentProvider();
+        StatementAnalysisProvider provider = statementProviderRegistry.currentProvider();
+        StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
+        boolean asynchronousSubmission = simulatedDecision == null && provider.supportsAsyncWebhookCompletion();
+
+        StatementSubmissionPreparationService.PreparedSubmission work = prepareWithRetry(
+                tenantId,
+                analysisId,
+                actor,
+                normalizeSimulateOutcome(simulateOutcome) == null ? provider.providerCode() : "SIMULATED",
+                asynchronousSubmission);
+
+        try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, work.applicationId())) {
             log.info(
                     "Starting asynchronous statement analysis using provider={} documentId={}",
                     provider.providerCode(),
-                    documentId);
-            ApplicationDocument document = documentService.getRequired(tenantId, documentId);
-            var application = applicationService.getRequired(tenantId, applicationId);
-            StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
-            ApplicationStatementOtpService.ResolvedOtp resolvedOtp = null;
-            if (simulatedDecision == null && provider.supportsAsyncWebhookCompletion()) {
-                resolvedOtp = applicationStatementOtpService.reserveFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId)
-                        .orElseThrow(() -> new BadRequestException("No pending statement OTP can open the statement document"));
+                    work.documentId());
+            if (work.alreadySubmitted()) {
+                log.info("Statement submission already has external identifiers; skipping provider call");
+                return;
             }
-
-            applicationService.handleStatementInProgress(tenantId, applicationId, actor);
-            analysis.setTenantId(tenantId);
-            analysis.setApplicationId(applicationId);
-            analysis.setSourceDocumentId(documentId);
-            analysis.setProvider(normalizeSimulateOutcome(simulateOutcome) == null ? provider.providerCode() : "SIMULATED");
-            analysis.setStatus(StatementAnalysisStatus.IN_PROGRESS);
-            statementAnalysisRepository.save(analysis);
-
             if (simulatedDecision != null) {
-                applyDecision(tenantId, applicationId, actor, analysis, simulatedDecision, false);
+                completionService.completeDecision(tenantId, analysisId, actor, simulatedDecision, false);
                 return;
             }
-            if (provider.supportsAsyncWebhookCompletion()) {
-                analysis.setStatementOtpId(resolvedOtp.otpId());
-                StatementAnalysisSubmission submission = provider.submit(application, document, resolvedOtp.otpValue());
-                analysis.setProvider(submission.provider());
-                analysis.setProviderStatus(submission.providerStatus());
-                analysis.setExternalClientId(submission.externalClientId());
-                analysis.setExternalDocumentId(submission.externalDocumentId());
-                analysis.setExternalBusinessId(submission.externalBusinessId());
-                analysis.setSummary(submission.summary());
-                analysis.setRawProviderResponse(submission.rawProviderResponse());
-                statementAnalysisRepository.save(analysis);
-                cladfyStatusPollingService.scheduleInitialStatusCheck(analysis);
-                log.info(
-                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={} otpId={}",
-                        submission.provider(),
-                        submission.externalClientId(),
-                        submission.externalDocumentId(),
-                        resolvedOtp.otpId());
+            if (!asynchronousSubmission) {
+                StatementAnalysisProvider.StatementDecision decision = provider.analyze(work.application(), work.document());
+                completionService.completeDecision(tenantId, analysisId, actor, decision, true);
                 return;
             }
-            applyDecision(tenantId, applicationId, actor, analysis, provider.analyze(application, document), true);
+            submitWithRecovery(provider, work, actor);
         } catch (RuntimeException ex) {
             log.error("Asynchronous statement analysis failed", ex);
             throw ex;
         }
     }
 
-    private void applyDecision(
-            String tenantId,
-            String applicationId,
-            String actor,
-            StatementAnalysis analysis,
-            StatementAnalysisProvider.StatementDecision decision,
-            boolean chargeProviderCompletion) {
-        analysis.setStatus(decision.status());
-        analysis.setAverageMonthlyInflow(decision.averageMonthlyInflow());
-        analysis.setAverageMonthlyOutflow(decision.averageMonthlyOutflow());
-        analysis.setAffordabilityScore(decision.affordabilityScore());
-        analysis.setRecommendation(decision.recommendation());
-        analysis.setSummary(decision.summary());
-        analysis.setCreditScore(null);
-        analysis.setRiskTier(null);
-        analysis.setNextStatusCheckAt(null);
-        analysis.setLastStatusCheckAt(Instant.now());
-        analysis.setCompletionSource("DIRECT");
-        analysis.setCompletedAt(Instant.now());
-        statementAnalysisRepository.save(analysis);
-        recordSystemOutcome(tenantId, applicationId, analysis, actor, decision.status(), decision.summary());
-        log.info(
-                "Statement analysis completed with status={} affordabilityScore={} recommendation={}",
-                decision.status(),
-                decision.affordabilityScore(),
-                decision.recommendation());
-        if (chargeProviderCompletion) {
-            subscriptionBillingService.chargeStatementCompletion(tenantId, analysis.getId(), actor);
+    private void submitWithRecovery(
+            StatementAnalysisProvider provider,
+            StatementSubmissionPreparationService.PreparedSubmission initialWork,
+            String actor) {
+        StatementSubmissionPreparationService.PreparedSubmission work = initialWork;
+        RuntimeException lastFailure = null;
+        StatementAnalysisSubmission submission = null;
+
+        for (int attempt = 1; attempt <= MAX_SUBMISSION_ATTEMPTS; attempt++) {
+            try {
+                if (submission == null && (work.recoveryAttempt() || attempt > 1)) {
+                    Optional<StatementAnalysisSubmission> recovered = provider.recoverSubmission(
+                            work.application(), work.document(), work.recoveryNotBefore());
+                    if (recovered.isPresent()) {
+                        submission = recovered.get();
+                        log.info(
+                                "Recovered existing provider statement submission externalClientId={} externalDocumentId={}",
+                                submission.externalClientId(),
+                                submission.externalDocumentId());
+                    }
+                }
+                if (submission == null) {
+                    submission = provider.submit(
+                            work.application(),
+                            work.document(),
+                            work.resolvedOtp().otpValue());
+                }
+                completionService.completeSubmission(work.tenantId(), work.analysisId(), submission);
+                log.info(
+                        "Submitted statement analysis to provider={} externalClientId={} externalDocumentId={} otpId={}",
+                        submission.provider(),
+                        submission.externalClientId(),
+                        submission.externalDocumentId(),
+                        work.resolvedOtp().otpId());
+                return;
+            } catch (RuntimeException ex) {
+                lastFailure = ex;
+                if (attempt == MAX_SUBMISSION_ATTEMPTS || !isRetryable(ex)) {
+                    throw ex;
+                }
+                backoff(attempt);
+                work = prepareWithRetry(
+                        work.tenantId(),
+                        work.analysisId(),
+                        actor,
+                        provider.providerCode(),
+                        true);
+            }
         }
-        if (decision.status() == StatementAnalysisStatus.PASSED) {
-            applicationService.handleStatementPassed(tenantId, applicationId, actor);
-        } else if (decision.status() == StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED) {
-            applicationService.handleStatementManualReview(tenantId, applicationId, actor, "Statement analysis requires manual review");
-        } else {
-            applicationService.handleStatementFailed(tenantId, applicationId, actor, "Statement analysis failed");
+        throw lastFailure == null ? new IllegalStateException("Statement submission failed") : lastFailure;
+    }
+
+    private StatementSubmissionPreparationService.PreparedSubmission prepareWithRetry(
+            String tenantId,
+            String analysisId,
+            String actor,
+            String providerCode,
+            boolean requiresOtp) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return preparationService.prepare(tenantId, analysisId, actor, providerCode, requiresOtp);
+            } catch (TransientDataAccessException ex) {
+                if (attempt == MAX_SUBMISSION_ATTEMPTS) {
+                    throw ex;
+                }
+                backoff(attempt);
+            }
         }
     }
 
-    private void recordSystemOutcome(
-            String tenantId,
-            String applicationId,
-            StatementAnalysis analysis,
-            String actor,
-            StatementAnalysisStatus status,
-            String reason) {
-        statementReviewService.recordDecision(
-                tenantId,
-                applicationId,
-                analysis.getId(),
-                toReviewDecision(status),
-                StatementReviewSource.SYSTEM,
-                actor,
-                reason);
+    private boolean isRetryable(RuntimeException exception) {
+        return exception instanceof TransientDataAccessException
+                || exception instanceof RestClientException;
     }
 
-    private StatementReviewDecision toReviewDecision(StatementAnalysisStatus status) {
-        return switch (status) {
-            case PASSED -> StatementReviewDecision.APPROVED;
-            case FAILED -> StatementReviewDecision.REJECTED;
-            case MANUAL_REVIEW_REQUIRED -> StatementReviewDecision.MANUAL_REVIEW_REQUIRED;
-            case PENDING, IN_PROGRESS -> throw new IllegalArgumentException("Cannot record review decision for non-final status " + status);
-        };
+    private void backoff(int attempt) {
+        try {
+            Thread.sleep(100L * attempt);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Statement submission retry interrupted", ex);
+        }
     }
 
     private StatementAnalysisProvider.StatementDecision simulatedDecision(String simulateOutcome) {
@@ -202,7 +180,8 @@ public class StatementAnalysisProcessingService {
                     BigDecimal.valueOf(45),
                     "REVIEW",
                     "Forced simulated statement manual review");
-            default -> throw new BadRequestException("Unsupported simulateOutcome. Use PASSED, FAILED, or MANUAL_REVIEW_REQUIRED");
+            default -> throw new BadRequestException(
+                    "Unsupported simulateOutcome. Use PASSED, FAILED, or MANUAL_REVIEW_REQUIRED");
         };
     }
 

@@ -3,6 +3,8 @@ package com.credvenn.lm.statement;
 import com.credvenn.lm.application.LoanRequestApplication;
 import com.credvenn.lm.document.ApplicationDocument;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Optional;
 
 public interface StatementAnalysisProvider {
 
@@ -16,6 +18,13 @@ public interface StatementAnalysisProvider {
 
     default StatementAnalysisSubmission submit(LoanRequestApplication application, ApplicationDocument document, String statementOtp) {
         throw new UnsupportedOperationException("Provider does not support asynchronous submission");
+    }
+
+    default Optional<StatementAnalysisSubmission> recoverSubmission(
+            LoanRequestApplication application,
+            ApplicationDocument document,
+            Instant notBefore) {
+        return Optional.empty();
     }
 
     record StatementDecision(
