@@ -44,6 +44,7 @@ public enum PermissionCatalog {
     CLIENT_CREATE("CLIENT_CREATE", "Create client records"),
     LOAN_VIEW("LOAN_VIEW", "View loan records"),
     LOAN_CREATE("LOAN_CREATE", "Create loan records"),
+    APPLICATION_VARIABLE_MANAGE("APPLICATION_VARIABLE_MANAGE", "Configure tenant loan application variables"),
     LOAN_PRODUCT_UPDATE("LOAN_PRODUCT_UPDATE", "Update loan products"),
     GL_ACCOUNT_VIEW("GL_ACCOUNT_VIEW", "View GL account templates and mappings"),
     GL_ACCOUNT_CREATE("GL_ACCOUNT_CREATE", "Create GL accounts in Fineract and register them as templates"),

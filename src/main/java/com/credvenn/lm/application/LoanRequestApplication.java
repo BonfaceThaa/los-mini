@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -21,6 +22,10 @@ public class LoanRequestApplication extends AuditableEntity {
     @Id
     @Column(length = 36)
     private String id;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
 
     @Column(name = "tenant_id", nullable = false, length = 36)
     private String tenantId;
@@ -159,6 +164,7 @@ public class LoanRequestApplication extends AuditableEntity {
     }
 
     public String getId() { return id; }
+    public long getVersion() { return version; }
     public String getTenantId() { return tenantId; }
     public void setTenantId(String tenantId) { this.tenantId = tenantId; }
     public String getApplicantFirstName() { return applicantFirstName; }

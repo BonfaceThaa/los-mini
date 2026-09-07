@@ -1,0 +1,3 @@
+package com.credvenn.lm.applicationvariable;
+import java.util.*;import org.springframework.data.jpa.repository.JpaRepository;
+public interface ApplicationVariableDefinitionRepository extends JpaRepository<ApplicationVariableDefinition,String>{List<ApplicationVariableDefinition> findAllByTenantIdOrderByDisplayOrderAsc(String tenantId);List<ApplicationVariableDefinition> findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(String tenantId);Optional<ApplicationVariableDefinition> findByIdAndTenantId(String id,String tenantId);boolean existsByTenantIdAndCodeIgnoreCase(String tenantId,String code);}

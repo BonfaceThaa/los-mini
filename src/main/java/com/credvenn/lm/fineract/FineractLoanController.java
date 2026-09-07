@@ -41,7 +41,7 @@ public class FineractLoanController {
             @Parameter(description = "Minimum overdue days to include in the report.")
             @RequestParam(defaultValue = "1") Integer overdueFromDays,
             @Parameter(description = "Maximum overdue days to include in the report.")
-            @RequestParam(defaultValue = "7") Integer overdueToDays) {
+            @RequestParam(defaultValue = "30") Integer overdueToDays) {
         return ResponseEntity.ok(fineractLoanService.getCurrentTenantOverdueLoanDashboard(
                 officeId,
                 loanOfficerId,

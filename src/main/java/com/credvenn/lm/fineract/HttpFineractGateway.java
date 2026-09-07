@@ -593,7 +593,7 @@ public class HttpFineractGateway implements FineractGateway {
         int fromAmount = query.fromAmount() == null ? 0 : query.fromAmount();
         int toAmount = query.toAmount() == null ? 0 : query.toAmount();
         int overdueFromDays = query.overdueFromDays() == null ? 1 : query.overdueFromDays();
-        int overdueToDays = query.overdueToDays() == null ? 7 : query.overdueToDays();
+        int overdueToDays = query.overdueToDays() == null ? 30 : query.overdueToDays();
         log.info("Fetching Fineract overdue loans report tenantFineractId={} officeId={} loanOfficerId={} overdueFromDays={} overdueToDays={}",
                 tenant.getFineractTenantId(),
                 officeId,
