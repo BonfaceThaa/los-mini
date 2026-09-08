@@ -25,18 +25,21 @@ public class KycService {
     private final ApplicationService applicationService;
     private final TenantService tenantService;
     private final KycApprovalService kycApprovalService;
+    private final KycDecisionService kycDecisionService;
 
     public KycService(
             KycCheckRepository kycCheckRepository,
             KycProcessingService processingService,
             ApplicationService applicationService,
             TenantService tenantService,
-            KycApprovalService kycApprovalService) {
+            KycApprovalService kycApprovalService,
+            KycDecisionService kycDecisionService) {
         this.kycCheckRepository = kycCheckRepository;
         this.processingService = processingService;
         this.applicationService = applicationService;
         this.tenantService = tenantService;
         this.kycApprovalService = kycApprovalService;
+        this.kycDecisionService = kycDecisionService;
     }
 
     @Transactional
@@ -121,13 +124,7 @@ public class KycService {
             log.info("Recording manual KYC review approved={} reason={}", request.approved(), request.reason().trim());
             if (request.approved()) {
                 check.setStatus(KycStatus.MANUALLY_APPROVED);
-                check = kycCheckRepository.save(check);
-                kycApprovalService.approveAndRequestClientProvisioning(
-                        tenantId,
-                        applicationId,
-                        actor,
-                        check.getId(),
-                        "KYC manually approved");
+                check = kycDecisionService.recordApprovedDecision(check, actor, "KYC manually approved");
             } else {
                 check.setStatus(KycStatus.MANUALLY_REJECTED);
                 applicationService.handleKycFailed(tenantId, applicationId, actor, request.reason().trim());
@@ -152,13 +149,7 @@ public class KycService {
             check.setReviewedBy(actor);
             check.setReviewReason(reason);
             check.setReviewedAt(Instant.now());
-            check = kycCheckRepository.save(check);
-            kycApprovalService.approveAndRequestClientProvisioning(
-                    tenantId,
-                    applicationId,
-                    actor,
-                    check.getId(),
-                    reason);
+            kycDecisionService.recordApprovedDecision(check, actor, reason);
         }
     }
 

@@ -16,17 +16,17 @@ public class KycProcessingService {
     private final KycCheckRepository kycCheckRepository;
     private final KycProviderRegistry kycProviderRegistry;
     private final ApplicationService applicationService;
-    private final KycApprovalService kycApprovalService;
+    private final KycDecisionService kycDecisionService;
 
     public KycProcessingService(
             KycCheckRepository kycCheckRepository,
             KycProviderRegistry kycProviderRegistry,
             ApplicationService applicationService,
-            KycApprovalService kycApprovalService) {
+            KycDecisionService kycDecisionService) {
         this.kycCheckRepository = kycCheckRepository;
         this.kycProviderRegistry = kycProviderRegistry;
         this.applicationService = applicationService;
-        this.kycApprovalService = kycApprovalService;
+        this.kycDecisionService = kycDecisionService;
     }
 
     @Async
@@ -48,19 +48,15 @@ public class KycProcessingService {
             check.setSummary(decision.summary());
             applyActionDetails(check, decision.actionDetails());
             log.info("KYC provider completed with status={} providerReference={}", decision.status(), decision.providerReference());
-            check = kycCheckRepository.save(check);
-
             if (decision.status() == KycStatus.PASSED) {
-                kycApprovalService.approveAndRequestClientProvisioning(
-                        tenantId,
-                        applicationId,
-                        actor,
-                        check.getId(),
-                        "KYC passed");
-            } else if (decision.status() == KycStatus.MANUAL_REVIEW_REQUIRED) {
-                applicationService.handleKycManualReview(tenantId, applicationId, actor, "KYC requires manual review");
+                kycDecisionService.recordApprovedDecision(check, actor, "KYC passed");
             } else {
-                applicationService.handleKycFailed(tenantId, applicationId, actor, "KYC failed and may be manually overridden");
+                kycCheckRepository.save(check);
+                if (decision.status() == KycStatus.MANUAL_REVIEW_REQUIRED) {
+                    applicationService.handleKycManualReview(tenantId, applicationId, actor, "KYC requires manual review");
+                } else {
+                    applicationService.handleKycFailed(tenantId, applicationId, actor, "KYC failed and may be manually overridden");
+                }
             }
         } catch (RuntimeException ex) {
             log.error("Asynchronous KYC processing failed", ex);

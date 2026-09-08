@@ -1,6 +1,5 @@
 package com.credvenn.lm.kyc;
 
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -22,12 +21,14 @@ class KycManualReviewFlowTest {
         ApplicationService applicationService = mock(ApplicationService.class);
         TenantService tenantService = mock(TenantService.class);
         KycApprovalService kycApprovalService = mock(KycApprovalService.class);
+        KycDecisionService kycDecisionService = mock(KycDecisionService.class);
         KycService service = new KycService(
                 kycCheckRepository,
                 processingService,
                 applicationService,
                 tenantService,
-                kycApprovalService);
+                kycApprovalService,
+                kycDecisionService);
 
         Tenant tenant = new Tenant();
         tenant.setKycMode(TenantKycMode.AUTO);
@@ -41,13 +42,8 @@ class KycManualReviewFlowTest {
         check.setProvider("SMILE_ID");
         check.setStatus(KycStatus.IN_PROGRESS);
         when(kycCheckRepository.findFirstByApplicationIdOrderByCreatedAtDesc("app-1")).thenReturn(Optional.of(check));
-        when(kycCheckRepository.save(check)).thenReturn(check);
-        doNothing().when(kycApprovalService).approveAndRequestClientProvisioning(
-                "tenant-1",
-                "app-1",
-                "officer",
-                "kyc-1",
-                "KYC manually approved");
+        when(kycDecisionService.recordApprovedDecision(check, "officer", "KYC manually approved"))
+                .thenReturn(check);
 
         service.manualReview(
                 "tenant-1",
@@ -55,12 +51,9 @@ class KycManualReviewFlowTest {
                 "officer",
                 new KycDtos.ManualKycReviewRequest(true, "approved manually"));
 
-        verify(kycCheckRepository).save(check);
-        verify(kycApprovalService).approveAndRequestClientProvisioning(
-                "tenant-1",
-                "app-1",
+        verify(kycDecisionService).recordApprovedDecision(
+                check,
                 "officer",
-                "kyc-1",
                 "KYC manually approved");
     }
 
