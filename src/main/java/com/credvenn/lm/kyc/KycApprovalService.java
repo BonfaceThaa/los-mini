@@ -3,6 +3,7 @@ package com.credvenn.lm.kyc;
 import com.credvenn.lm.application.ApplicationService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -16,7 +17,8 @@ public class KycApprovalService {
         this.applicationEventPublisher = applicationEventPublisher;
     }
 
-    @Transactional
+    // Approval runs after commit, so each finalization attempt needs its own transaction.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void approveAndRequestClientProvisioning(
             String tenantId,
             String applicationId,

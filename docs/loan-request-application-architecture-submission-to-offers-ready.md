@@ -1,6 +1,6 @@
 # Loan Request Application Architecture: Submission to Offers Ready
 
-Updated: 2026-08-31
+Updated: 2026-09-08
 
 ## Scope
 
@@ -149,6 +149,9 @@ This means statement arrival and application submission are loosely coupled and 
 
 - `KycService`
 - `KycProcessingService`
+- `KycDecisionService`
+- `KycApprovedEventListener`
+- `KycApprovalRetryService`
 - `KycApprovalService`
 
 ### Modes
@@ -166,8 +169,13 @@ ApplicationCreatedEvent
 -> if AUTO, KycService.run(...)
 -> KycProcessingService.process(...)
 -> provider decision
--> KycApprovalService.approveAndRequestClientProvisioning(...) when approved
+-> KycDecisionService records approval in TX-1
+-> KycApprovedEvent is handled after TX-1 commits
+-> KycApprovalRetryService retries lock conflicts
+-> KycApprovalService finalizes the application in a fresh TX-2
 ```
+
+SmileID runs before the approved-decision transaction and is outside the retry boundary. Database-lock retries repeat only application finalization, not the provider request. Manual approval and disabled-tenant bypass use the same approved event.
 
 ### Status ownership
 
@@ -322,12 +330,18 @@ StatementAnalysisService.run(...)
 -> validate document belongs to application
 -> validate at least one pending OTP can open the PDF
 -> create PENDING analysis row
--> StatementAnalysisProcessingService.process(...)
--> move application to STATEMENT_IN_PROGRESS
--> reserve first matching OTP
--> submit to Cladfy
--> save provider correlation ids
+-> StatementAnalysisProcessingService.process(...) without a DB transaction
+-> StatementSubmissionPreparationService.prepare(...) in TX-1
+   -> move application to STATEMENT_IN_PROGRESS
+   -> reserve first matching OTP
+   -> mark analysis IN_PROGRESS and commit
+-> submit to Cladfy without a DB transaction
+-> StatementSubmissionCompletionService.completeSubmission(...) in TX-2
+   -> save provider correlation ids
+   -> schedule polling and commit
 ```
+
+Before retrying an uncertain Cladfy upload, the provider adapter searches for a matching recent Cladfy document. A recovered document is reused instead of uploaded again. Recovery is heuristic because Cladfy does not support a Mini-LOS submission key.
 
 ### Completion path
 
@@ -458,6 +472,10 @@ Wrong pending OTPs are tested against the PDF locally before provider submission
 ### Duplicate active analyses
 
 A new statement submission is blocked when another analysis for the same application is already `PENDING` or `IN_PROGRESS`.
+
+### Transaction and provider failure gaps
+
+Statement preparation, Cladfy submission, and local completion are intentionally separate. A crash between them can leave an analysis `IN_PROGRESS`; retry first attempts provider recovery. KYC approval events are also in-process, so a crash after the KYC decision commits but before application finalization may require the client-creation recovery endpoint or operational reconciliation.
 
 ### Past-statement statuses
 

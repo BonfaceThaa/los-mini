@@ -5,6 +5,8 @@
 2. [ADR-002: Use Spring Config Import for Local .env Property Loading](#adr-002-use-spring-config-import-for-local-env-property-loading)
 3. [ADR-003: Gate Offers Ready on Both KYC and Statement Completion](#adr-003-gate-offers-ready-on-both-kyc-and-statement-completion)
 4. [ADR-004: Persist Multiple Statement OTP Candidates and Retry Statement Analysis Safely](#adr-004-persist-multiple-statement-otp-candidates-and-retry-statement-analysis-safely)
+5. [ADR-005: Isolate Statement Provider Calls from Database Transactions](#adr-005-isolate-statement-provider-calls-from-database-transactions)
+6. [ADR-006: Finalize Approved KYC After Commit with Lock Retries](#adr-006-finalize-approved-kyc-after-commit-with-lock-retries)
 
 # ADR-001: Increase Statement Upload Size Limits in Nginx and Spring Boot
 
@@ -374,3 +376,135 @@ Coverage from those tests includes:
 - Statement processing: [StatementAnalysisProcessingService.java](../src/main/java/com/credvenn/lm/statement/StatementAnalysisProcessingService.java)
 - Cladfy completion: [CladfyAnalysisCompletionService.java](../src/main/java/com/credvenn/lm/statement/CladfyAnalysisCompletionService.java)
 - Inbound statement routing: [InboundStatementProcessor.java](../src/main/java/com/credvenn/lm/statementinbox/InboundStatementProcessor.java)
+
+# ADR-005: Isolate Statement Provider Calls from Database Transactions
+
+## Status
+Accepted
+
+## Date
+2026-09-08
+
+## Context
+Statement processing previously combined application and analysis updates with Cladfy create-client and document-upload calls in one database transaction. It therefore held locks on the shared loan application row during network I/O. Concurrent KYC processing updates the same row, increasing lock duration and producing MariaDB deadlocks.
+
+Cladfy does not accept a caller-supplied idempotency key. A timeout after Cladfy accepts an upload can leave the provider operation successful while Mini-LOS has not stored its identifiers.
+
+## Decision
+Split submission into explicit phases:
+
+```text
+StatementAnalysisProcessingService.process()                    async coordinator, no TX
+  -> StatementSubmissionPreparationService.prepare()            TX-1
+  -> StatementAnalysisProvider.submit()                         no TX
+  -> StatementSubmissionCompletionService.completeSubmission() TX-2
+```
+
+TX-1 locks the tenant-scoped analysis row, validates the application and document, reserves the OTP, marks the analysis `IN_PROGRESS`, and commits. Only `IN_PROGRESS` is used as the durable submission state; no submission-key table or additional pending state is introduced.
+
+Cladfy create-client and upload calls then execute without an open database transaction. TX-2 locks the analysis row, stores external identifiers and the provider response, schedules polling, and commits.
+
+Transient database and HTTP failures receive at most three attempts with short backoff. Before uploading again after an uncertain outcome, the adapter searches Cladfy for an existing submission. It recovers a document only when the provider/document type matches and creation time falls inside the analysis recovery window. If only TX-2 fails, the response retained in memory is saved again without another provider call.
+
+## Rationale
+- Network latency no longer extends database lock duration.
+- KYC and statement workers contend on the application row for less time.
+- Separate transactional beans give preparation and completion independent commits.
+- Provider lookup reduces duplicate uploads without claiming unsupported Cladfy idempotency.
+
+## Consequences
+
+### Positive
+- Cladfy calls hold no application or statement database locks.
+- Transient lock failures restart from a clean transaction.
+- Accepted provider work can often be recovered after a lost response.
+- Stored external identifiers prevent another provider call.
+
+### Trade-offs and residual risks
+- TX-1, the provider call, and TX-2 are not atomic.
+- Recovery is heuristic; Cladfy provides no unique Mini-LOS submission key.
+- A crash after TX-1 or provider acceptance can leave the analysis `IN_PROGRESS` until retry/recovery.
+- In-process retries are not durable across restarts.
+
+## Alternatives Considered
+- Keep Cladfy inside one transaction: rejected because it holds locks during network I/O.
+- Remove `@Transactional` without phase services: rejected because repository writes would commit independently without a preparation/completion protocol.
+- Add an outbox/submission table: deferred; the provider cannot enforce the corresponding idempotency key.
+
+## References
+- [StatementAnalysisProcessingService.java](../src/main/java/com/credvenn/lm/statement/StatementAnalysisProcessingService.java)
+- [StatementSubmissionPreparationService.java](../src/main/java/com/credvenn/lm/statement/StatementSubmissionPreparationService.java)
+- [StatementSubmissionCompletionService.java](../src/main/java/com/credvenn/lm/statement/StatementSubmissionCompletionService.java)
+- [HttpCladfyGateway.java](../src/main/java/com/credvenn/lm/statement/HttpCladfyGateway.java)
+
+# ADR-006: Finalize Approved KYC After Commit with Lock Retries
+
+## Status
+Accepted
+
+## Date
+2026-09-08
+
+## Context
+Automatic KYC, manual approval, and tenant bypass previously updated the shared application row directly from their caller transaction. Concurrent statement processing can update the same row. A deadlock could consequently roll back application finalization after SmileID had returned success. Retrying the whole method would call SmileID again.
+
+A temporary recovery mechanism is required without adding an outbox table while the application state machine is redesigned.
+
+## Decision
+Use one event and retry boundary for every approval path:
+
+```text
+Automatic KYC -> SmileID assessment                              no retry
+
+Automatic, manual, or bypass approval
+  -> KycDecisionService.recordApprovedDecision()                 TX-1
+       -> save approved KYC and publish KycApprovedEvent
+       -> commit
+  -> KycApprovedEventListener                                    AFTER_COMMIT
+  -> KycApprovalRetryService                                     no TX
+  -> KycApprovalService.approveAndRequestClientProvisioning()    TX-2 per attempt
+       -> mark application KYC_PASSED
+       -> publish ClientProvisioningRequestedEvent and commit
+  -> existing client-provisioning listener                       AFTER_COMMIT
+```
+
+Retry only pessimistic and optimistic locking failures. Three retries after the initial call provide four total attempts with exponential delay and jitter. The retry coordinator and transactional finalizer are separate Spring beans. Because the listener runs after commit with no active transaction, each call to the finalizer starts a fresh transaction and rolls back before another attempt.
+
+SmileID remains outside this boundary and is never repeated by a database-lock retry. Manual approval and disabled-tenant bypass use the same event flow.
+
+## Rationale
+- The provider decision commits before contended application finalization.
+- Retrying only TX-2 avoids duplicate SmileID requests and charges.
+- Separate proxies avoid self-invocation and guarantee a clean transaction per attempt.
+- Client provisioning retains its existing after-commit boundary.
+
+## Consequences
+
+### Positive
+- Transient application-row conflicts can recover automatically.
+- SmileID is called once per automatic KYC run.
+- Automatic, manual, and bypass callers behave consistently.
+- Failed attempts cannot commit partial status/history changes.
+
+### Trade-offs and residual risks
+- The event is not durable. A crash after TX-1 but before TX-2 can leave KYC approved while application finalization is incomplete.
+- Exhausted retries are logged and require operational retry or future reconciliation.
+- This mitigates contention; it does not replace the shared application state machine.
+- Unrelated transactions require their own retry and lock strategy.
+
+## Alternatives Considered
+- Combine `@Retryable` and `@Transactional` on one broadly called method: rejected because proxy ordering and self-invocation paths make transaction-per-attempt behavior harder to guarantee.
+- Retry the complete KYC process: rejected because it repeats SmileID.
+- Add a durable outbox now: deferred to the state-machine reliability redesign.
+
+## Operational Recovery
+- For `PASSED` or `MANUALLY_APPROVED` KYC without a Fineract client, call `POST /api/v1/applications/{applicationId}/kyc/retry-client-creation`.
+- Do not use the general KYC retry merely to finalize an approved result; it reruns the configured provider.
+- Alert on `KYC application finalization failed after retries`.
+
+## References
+- [KycDecisionService.java](../src/main/java/com/credvenn/lm/kyc/KycDecisionService.java)
+- [KycApprovedEventListener.java](../src/main/java/com/credvenn/lm/kyc/KycApprovedEventListener.java)
+- [KycApprovalRetryService.java](../src/main/java/com/credvenn/lm/kyc/KycApprovalRetryService.java)
+- [KycApprovalService.java](../src/main/java/com/credvenn/lm/kyc/KycApprovalService.java)
+- [KycController.java](../src/main/java/com/credvenn/lm/kyc/KycController.java)
