@@ -1,9 +1,11 @@
 package com.credvenn.lm.application;
 
+import com.credvenn.lm.applicationvariable.ApplicationVariableDtos;
 import com.credvenn.lm.fineract.FineractDtos;
 import com.credvenn.lm.inventory.DepositType;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -30,7 +32,14 @@ public final class ApplicationDtos {
             @Size(max = 50) String gender,
             @Size(max = 100) String statementOtp,
             @NotNull @Positive BigDecimal requestedAmount,
-            @Positive Integer requestedTermMonths) {
+            @Positive Integer requestedTermMonths,
+            @Valid @Size(max = 100) List<ApplicationVariableDtos.AnswerRequest> applicationVariables) {
+        public CreateLoanRequestApplicationRequest(String applicantFirstName, String applicantMiddleName,
+                String applicantLastName, String phoneNumber, String nationalId, ApplicantIdType applicantIdType,
+                LocalDate dob, String gender, String statementOtp, BigDecimal requestedAmount, Integer requestedTermMonths) {
+            this(applicantFirstName, applicantMiddleName, applicantLastName, phoneNumber, nationalId, applicantIdType,
+                    dob, gender, statementOtp, requestedAmount, requestedTermMonths, List.of());
+        }
     }
 
     @Schema(name = "CaptureConsentRequest")
@@ -141,6 +150,8 @@ public final class ApplicationDtos {
             BigDecimal marginAmount,
             Instant createdAt,
             Instant updatedAt,
-            List<ApplicationStatusHistoryResponse> statusHistory) {
+            List<ApplicationStatusHistoryResponse> statusHistory,
+            @ArraySchema(schema = @Schema(implementation = ApplicationVariableDtos.AnswerResponse.class))
+            List<ApplicationVariableDtos.AnswerResponse> applicationVariables) {
     }
 }

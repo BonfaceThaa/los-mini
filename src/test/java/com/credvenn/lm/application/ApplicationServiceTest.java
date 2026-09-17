@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.client.ClientRecordService;
+import com.credvenn.lm.applicationvariable.ApplicationVariableService;
 import com.credvenn.lm.client.ClientRecord;
 import com.credvenn.lm.fineract.FineractGateway;
 import com.credvenn.lm.inventory.InventoryDeviceAssignment;
@@ -96,6 +97,8 @@ class ApplicationServiceTest {
         assertEquals("Female", response.gender());
         assertEquals("432198", response.statementOtp());
         verify(context.applicationStatementOtpService).createInitialOtp("tenant-1", saved.getId(), "432198");
+        verify(context.applicationVariableService).prepare("tenant-1", List.of());
+        verify(context.applicationVariableService).savePrepared(eq("tenant-1"), eq(saved.getId()), any());
     }
 
     @Test
@@ -370,6 +373,7 @@ class ApplicationServiceTest {
         private final ApplicationEventPublisher applicationEventPublisher = mock(ApplicationEventPublisher.class);
         private final SubscriptionBillingService subscriptionBillingService = mock(SubscriptionBillingService.class);
         private final ClientRecordService clientRecordService = mock(ClientRecordService.class);
+        private final ApplicationVariableService applicationVariableService = mock(ApplicationVariableService.class);
         private final ApplicationService service = new ApplicationService(
                 applicationRepository,
                 statusHistoryRepository,
@@ -385,7 +389,8 @@ class ApplicationServiceTest {
                 applicationStatementOtpService,
                 applicationEventPublisher,
                 subscriptionGuardService,
-                subscriptionBillingService);
+                subscriptionBillingService,
+                applicationVariableService);
 
         private TestContext() {
             when(applicationStatementOtpService.listViews(anyString(), anyString())).thenReturn(List.of());

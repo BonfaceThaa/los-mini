@@ -1,11 +1,148 @@
 package com.credvenn.lm.applicationvariable;
-import com.credvenn.lm.application.LoanRequestApplicationRepository;import com.credvenn.lm.common.exception.*;import com.fasterxml.jackson.core.type.TypeReference;import com.fasterxml.jackson.databind.ObjectMapper;import java.math.BigDecimal;import java.time.LocalDate;import java.util.*;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;
-@Service public class ApplicationVariableService{final ApplicationVariableDefinitionRepository defs;final ApplicationVariableRepository values;final LoanRequestApplicationRepository apps;final ObjectMapper json;public ApplicationVariableService(ApplicationVariableDefinitionRepository d,ApplicationVariableRepository v,LoanRequestApplicationRepository a,ObjectMapper j){defs=d;values=v;apps=a;json=j;}
-@Transactional(readOnly=true) public List<DefinitionResponse> schema(String t){return defs.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(t).stream().map(this::out).toList();}
-@Transactional public DefinitionResponse create(String t,DefinitionRequest r){if(defs.existsByTenantIdAndCodeIgnoreCase(t,r.code().trim()))throw new ConflictException("Application variable code already exists");if(r.fieldType()==ApplicationVariableFieldType.SINGLE_SELECT&&(r.options()==null||r.options().isEmpty()))throw new BadRequestException("SINGLE_SELECT requires options");ApplicationVariableDefinition d=new ApplicationVariableDefinition();d.tenantId=t;d.code=r.code().trim().toUpperCase(Locale.ROOT);d.label=r.label().trim();d.sectionName=clean(r.sectionName());d.fieldType=r.fieldType();d.required=r.required();d.displayOrder=r.displayOrder()==null?0:r.displayOrder();try{d.optionsJson=json.writeValueAsString(r.options()==null?List.of():r.options());}catch(Exception e){throw new BadRequestException("Invalid options");}return out(defs.save(d));}
-@Transactional public List<AnswerResponse> save(String t,String app,List<AnswerRequest> input){apps.findByIdAndTenantId(app,t).orElseThrow(()->new NotFoundException("Application not found"));List<AnswerRequest> a=input==null?List.of():input;Map<String,AnswerRequest> by=new HashMap<>();for(var x:a)if(by.put(x.definitionId(),x)!=null)throw new BadRequestException("Duplicate application variable answer");List<ApplicationVariableDefinition> active=defs.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(t);for(var d:active)if(d.required&&!by.containsKey(d.id))throw new BadRequestException("Required application variable is missing: "+d.code);List<ApplicationVariable> saved=new ArrayList<>();for(var x:a){var d=defs.findByIdAndTenantId(x.definitionId(),t).filter(z->z.active).orElseThrow(()->new BadRequestException("Unknown or inactive application variable"));String v=x.value()==null?null:x.value().trim();if(v==null||v.isBlank())throw new BadRequestException("Answer is required for "+d.code);validate(d,v);ApplicationVariable av=new ApplicationVariable();av.tenantId=t;av.applicationId=app;av.definitionId=d.id;av.code=d.code;av.label=d.label;av.section=d.sectionName;av.fieldType=d.fieldType;av.value=v;saved.add(values.save(av));}return saved.stream().map(this::out).toList();}
-@Transactional(readOnly=true) public List<AnswerResponse> answers(String t,String app){apps.findByIdAndTenantId(app,t).orElseThrow(()->new NotFoundException("Application not found"));return values.findAllByTenantIdAndApplicationId(t,app).stream().map(this::out).toList();}
-void validate(ApplicationVariableDefinition d,String v){try{switch(d.fieldType){case INTEGER->Integer.parseInt(v);case DECIMAL,MONEY->new BigDecimal(v);case DATE->LocalDate.parse(v);case BOOLEAN->{if(!v.equalsIgnoreCase("true")&&!v.equalsIgnoreCase("false"))throw new Exception();}case SINGLE_SELECT->{List<String> o=json.readValue(d.optionsJson,new TypeReference<>(){});if(o.stream().noneMatch(v::equals))throw new Exception();}default->{}}}catch(Exception e){throw new BadRequestException("Invalid value for "+d.code);}}
-DefinitionResponse out(ApplicationVariableDefinition d){List<String> o;try{o=json.readValue(d.optionsJson,new TypeReference<>(){});}catch(Exception e){o=List.of();}return new DefinitionResponse(d.id,d.code,d.label,d.sectionName,d.fieldType,d.required,d.active,d.displayOrder,o);}AnswerResponse out(ApplicationVariable v){return new AnswerResponse(v.definitionId,v.code,v.label,v.section,v.fieldType,v.value);}String clean(String v){return v==null||v.isBlank()?null:v.trim();}
-public record DefinitionRequest(String code,String label,String sectionName,ApplicationVariableFieldType fieldType,boolean required,Integer displayOrder,List<String> options){}public record DefinitionResponse(String id,String code,String label,String sectionName,ApplicationVariableFieldType fieldType,boolean required,boolean active,int displayOrder,List<String> options){}public record AnswerRequest(String definitionId,String value){}public record AnswerResponse(String definitionId,String code,String label,String sectionName,ApplicationVariableFieldType fieldType,String value){}
+
+import com.credvenn.lm.common.exception.*;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ApplicationVariableService {
+    private final ApplicationVariableDefinitionRepository definitions;
+    private final ApplicationVariableRepository variables;
+    private final ObjectMapper objectMapper;
+
+    public ApplicationVariableService(ApplicationVariableDefinitionRepository definitions,
+            ApplicationVariableRepository variables, ObjectMapper objectMapper) {
+        this.definitions = definitions; this.variables = variables; this.objectMapper = objectMapper;
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApplicationVariableDtos.DefinitionResponse> list(String tenantId, boolean activeOnly) {
+        var items = activeOnly ? definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(tenantId)
+                : definitions.findAllByTenantIdOrderByDisplayOrderAsc(tenantId);
+        return items.stream().map(this::toDefinitionResponse).toList();
+    }
+
+    @Transactional
+    public ApplicationVariableDtos.DefinitionResponse create(String tenantId, ApplicationVariableDtos.DefinitionRequest request) {
+        String code = normalizeCode(request.code());
+        if (definitions.existsByTenantIdAndCodeIgnoreCase(tenantId, code)) throw new ConflictException("Application question code already exists");
+        ApplicationVariableDefinition definition = new ApplicationVariableDefinition();
+        definition.setTenantId(tenantId); definition.setCode(code); definition.setActive(true);
+        apply(definition, request, false);
+        return toDefinitionResponse(definitions.save(definition));
+    }
+
+    @Transactional
+    public ApplicationVariableDtos.DefinitionResponse update(String tenantId, String id, ApplicationVariableDtos.DefinitionRequest request) {
+        ApplicationVariableDefinition definition = requiredDefinition(tenantId, id);
+        if (!definition.getCode().equals(normalizeCode(request.code()))) throw new BadRequestException("Question code cannot be changed");
+        apply(definition, request, true);
+        return toDefinitionResponse(definitions.save(definition));
+    }
+
+    @Transactional
+    public ApplicationVariableDtos.DefinitionResponse setActive(String tenantId, String id, boolean active) {
+        ApplicationVariableDefinition definition = requiredDefinition(tenantId, id);
+        definition.setActive(active); definition.setDefinitionVersion(definition.getDefinitionVersion() + 1);
+        return toDefinitionResponse(definitions.save(definition));
+    }
+
+    @Transactional(readOnly = true)
+    public List<PreparedAnswer> prepare(String tenantId, List<ApplicationVariableDtos.AnswerRequest> input) {
+        List<ApplicationVariableDtos.AnswerRequest> answers = input == null ? List.of() : input;
+        List<ApplicationVariableDefinition> active = definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(tenantId);
+        Map<String, ApplicationVariableDefinition> byId = active.stream().collect(Collectors.toMap(ApplicationVariableDefinition::getId, Function.identity()));
+        Set<String> submitted = new HashSet<>();
+        List<PreparedAnswer> prepared = new ArrayList<>();
+        for (var answer : answers) {
+            if (!submitted.add(answer.definitionId())) throw new BadRequestException("Question was answered more than once: " + answer.definitionId());
+            ApplicationVariableDefinition definition = byId.get(answer.definitionId());
+            if (definition == null) throw new BadRequestException("Unknown, inactive, or cross-tenant application question: " + answer.definitionId());
+            prepared.add(validateAndPrepare(definition, answer));
+        }
+        for (ApplicationVariableDefinition definition : active) {
+            if (definition.isRequired() && !submitted.contains(definition.getId())) throw new BadRequestException("Required application question is missing: " + definition.getCode());
+        }
+        return List.copyOf(prepared);
+    }
+
+    @Transactional
+    public void savePrepared(String tenantId, String applicationId, List<PreparedAnswer> prepared) {
+        List<ApplicationVariable> entities = prepared.stream().map(item -> {
+            ApplicationVariable value = new ApplicationVariable();
+            value.setTenantId(tenantId); value.setApplicationId(applicationId); value.setDefinitionId(item.definitionId());
+            value.setDefinitionVersion(item.definitionVersion()); value.setCodeSnapshot(item.code()); value.setLabelSnapshot(item.label());
+            value.setSectionSnapshot(item.sectionName()); value.setFieldTypeSnapshot(item.fieldType()); value.setAnswerValue(write(item.snapshot()));
+            return value;
+        }).toList();
+        variables.saveAll(entities);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ApplicationVariableDtos.AnswerResponse> answers(String tenantId, String applicationId) {
+        return variables.findAllByTenantIdAndApplicationIdOrderByIdAsc(tenantId, applicationId).stream()
+                .map(this::toAnswerResponse)
+                .toList();
+    }
+
+    private PreparedAnswer validateAndPrepare(ApplicationVariableDefinition definition, ApplicationVariableDtos.AnswerRequest answer) {
+        String text = clean(answer.textValue());
+        List<String> selected = answer.selectedValues() == null ? List.of() : answer.selectedValues();
+        if (new HashSet<>(selected).size() != selected.size()) throw new BadRequestException("Duplicate selections for " + definition.getCode());
+        List<ApplicationVariableDtos.Option> selectedOptions = new ArrayList<>();
+        switch (definition.getFieldType()) {
+            case TEXT, TEXTAREA -> {
+                if (text == null || !selected.isEmpty()) throw new BadRequestException("Text answer required for " + definition.getCode());
+            }
+            case SINGLE_SELECT, MULTI_SELECT -> {
+                if (text != null) throw new BadRequestException("Text is not allowed for " + definition.getCode());
+                List<ApplicationVariableDtos.Option> options = readOptions(definition.getOptionsJson());
+                Map<String, ApplicationVariableDtos.Option> byValue = options.stream().collect(Collectors.toMap(ApplicationVariableDtos.Option::value, Function.identity()));
+                for (String value : selected) {
+                    ApplicationVariableDtos.Option option = byValue.get(value);
+                    if (option == null) throw new BadRequestException("Invalid option for " + definition.getCode() + ": " + value);
+                    selectedOptions.add(option);
+                }
+                int configuredMinimum = Optional.ofNullable(definition.getMinimumSelections()).orElse(0);
+                int minimum = definition.getFieldType() == ApplicationVariableFieldType.SINGLE_SELECT ? 1 : Math.max(configuredMinimum, definition.isRequired() ? 1 : 0);
+                int maximum = definition.getFieldType() == ApplicationVariableFieldType.SINGLE_SELECT ? 1 : Optional.ofNullable(definition.getMaximumSelections()).orElse(Integer.MAX_VALUE);
+                if (selected.size() < minimum || selected.size() > maximum) throw new BadRequestException("Invalid number of selections for " + definition.getCode());
+            }
+        }
+        AnswerSnapshot snapshot = new AnswerSnapshot(text, List.copyOf(selectedOptions));
+        return new PreparedAnswer(definition.getId(), definition.getDefinitionVersion(), definition.getCode(), definition.getLabel(), definition.getSectionName(), definition.getFieldType(), snapshot);
+    }
+
+    private void apply(ApplicationVariableDefinition definition, ApplicationVariableDtos.DefinitionRequest request, boolean incrementVersion) {
+        List<ApplicationVariableDtos.Option> options = request.options() == null ? List.of() : request.options();
+        boolean select = request.fieldType() == ApplicationVariableFieldType.SINGLE_SELECT || request.fieldType() == ApplicationVariableFieldType.MULTI_SELECT;
+        if (select && options.isEmpty()) throw new BadRequestException("Select questions require at least one option");
+        if (!select && (!options.isEmpty() || request.minimumSelections() != null || request.maximumSelections() != null)) throw new BadRequestException("Text questions cannot define selection options or limits");
+        Set<String> optionValues = new HashSet<>();
+        for (var option : options) if (!optionValues.add(option.value())) throw new BadRequestException("Option values must be unique");
+        if (request.fieldType() == ApplicationVariableFieldType.SINGLE_SELECT && (request.minimumSelections() != null || request.maximumSelections() != null)) throw new BadRequestException("SINGLE_SELECT always requires exactly one selection");
+        if (request.minimumSelections() != null && request.maximumSelections() != null && request.minimumSelections() > request.maximumSelections()) throw new BadRequestException("minimumSelections cannot exceed maximumSelections");
+        if (request.maximumSelections() != null && request.maximumSelections() > options.size()) throw new BadRequestException("maximumSelections cannot exceed the number of options");
+        definition.setLabel(request.label().trim()); definition.setSectionName(clean(request.sectionName())); definition.setFieldType(request.fieldType());
+        definition.setRequired(request.required()); definition.setDisplayOrder(Optional.ofNullable(request.displayOrder()).orElse(0));
+        definition.setMinimumSelections(request.minimumSelections()); definition.setMaximumSelections(request.maximumSelections()); definition.setOptionsJson(write(options));
+        if (incrementVersion) definition.setDefinitionVersion(definition.getDefinitionVersion() + 1);
+    }
+
+    private ApplicationVariableDefinition requiredDefinition(String tenantId, String id) { return definitions.findByIdAndTenantId(id, tenantId).orElseThrow(() -> new NotFoundException("Application question not found")); }
+    private ApplicationVariableDtos.DefinitionResponse toDefinitionResponse(ApplicationVariableDefinition d) { return new ApplicationVariableDtos.DefinitionResponse(d.getId(), d.getCode(), d.getLabel(), d.getSectionName(), d.getFieldType(), d.isRequired(), d.isActive(), d.getDisplayOrder(), d.getDefinitionVersion(), d.getMinimumSelections(), d.getMaximumSelections(), readOptions(d.getOptionsJson())); }
+    private ApplicationVariableDtos.AnswerResponse toAnswerResponse(ApplicationVariable v) { AnswerSnapshot a = read(v.getAnswerValue()); return new ApplicationVariableDtos.AnswerResponse(v.getDefinitionId(), v.getDefinitionVersion(), v.getCodeSnapshot(), v.getLabelSnapshot(), v.getSectionSnapshot(), v.getFieldTypeSnapshot(), a.textValue(), a.selectedValues()); }
+    private String normalizeCode(String value) { return value.trim().toUpperCase(Locale.ROOT); }
+    private String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private String write(Object value) { try { return objectMapper.writeValueAsString(value); } catch (Exception ex) { throw new BadRequestException("Application variable JSON is invalid"); } }
+    private List<ApplicationVariableDtos.Option> readOptions(String json) { try { return json == null ? List.of() : objectMapper.readValue(json, new TypeReference<>() {}); } catch (Exception ex) { throw new IllegalStateException("Stored application question options are invalid", ex); } }
+    private AnswerSnapshot read(String json) { try { return objectMapper.readValue(json, AnswerSnapshot.class); } catch (Exception ex) { throw new IllegalStateException("Stored application answer is invalid", ex); } }
+
+    public record AnswerSnapshot(String textValue, List<ApplicationVariableDtos.Option> selectedValues) {}
+    public record PreparedAnswer(String definitionId, int definitionVersion, String code, String label, String sectionName, ApplicationVariableFieldType fieldType, AnswerSnapshot snapshot) {}
 }

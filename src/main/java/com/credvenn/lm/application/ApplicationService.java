@@ -1,6 +1,7 @@
 package com.credvenn.lm.application;
 
 import com.credvenn.lm.client.ClientRecordService;
+import com.credvenn.lm.applicationvariable.ApplicationVariableService;
 import com.credvenn.lm.common.api.PagedResponse;
 import com.credvenn.lm.common.api.PaginationSupport;
 import com.credvenn.lm.common.exception.BadRequestException;
@@ -75,6 +76,7 @@ public class ApplicationService {
     private final ApplicationEventPublisher applicationEventPublisher;
     private final SubscriptionGuardService subscriptionGuardService;
     private final SubscriptionBillingService subscriptionBillingService;
+    private final ApplicationVariableService applicationVariableService;
 
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
@@ -91,7 +93,8 @@ public class ApplicationService {
             ApplicationStatementOtpService applicationStatementOtpService,
             ApplicationEventPublisher applicationEventPublisher,
             SubscriptionGuardService subscriptionGuardService,
-            SubscriptionBillingService subscriptionBillingService) {
+            SubscriptionBillingService subscriptionBillingService,
+            ApplicationVariableService applicationVariableService) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
         this.kycCheckRepository = kycCheckRepository;
@@ -107,6 +110,7 @@ public class ApplicationService {
         this.applicationEventPublisher = applicationEventPublisher;
         this.subscriptionGuardService = subscriptionGuardService;
         this.subscriptionBillingService = subscriptionBillingService;
+        this.applicationVariableService = applicationVariableService;
     }
 
     @Transactional
@@ -115,6 +119,8 @@ public class ApplicationService {
             String actor,
             ApplicationDtos.CreateLoanRequestApplicationRequest request) {
         subscriptionGuardService.assertCanCreateApplication(tenantId);
+        List<ApplicationVariableService.PreparedAnswer> preparedVariables = applicationVariableService.prepare(
+                tenantId, request.applicationVariables());
         log.info(
                 "Creating loan application for tenantId={} applicant={} {} phone={} nationalId={} applicantIdType={} requestedAmount={} requestedTermMonths={}",
                 tenantId,
@@ -146,6 +152,7 @@ public class ApplicationService {
         }
         application.setStatus(ApplicationStatus.SUBMITTED);
         application = applicationRepository.save(application);
+        applicationVariableService.savePrepared(tenantId, application.getId(), preparedVariables);
         if (initialStatementOtp != null) {
             applicationStatementOtpService.createInitialOtp(tenantId, application.getId(), initialStatementOtp);
         }
@@ -172,7 +179,8 @@ public class ApplicationService {
                 .map(application -> toResponse(
                         application,
                         statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId()),
-                        applicationStatementOtpService.listViews(tenantId, application.getId())));
+                        applicationStatementOtpService.listViews(tenantId, application.getId()),
+                        List.of()));
         return PagedResponse.fromPage(applicationPage, normalizedSortBy, normalizedSortDir);
     }
 
@@ -182,7 +190,8 @@ public class ApplicationService {
                 .map(application -> toResponse(
                         application,
                         statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(application.getId()),
-                        applicationStatementOtpService.listViews(tenantId, application.getId())))
+                        applicationStatementOtpService.listViews(tenantId, application.getId()),
+                        List.of()))
                 .toList();
     }
 
@@ -192,7 +201,8 @@ public class ApplicationService {
         return toResponse(
                 application,
                 statusHistoryRepository.findAllByApplicationIdOrderByIdAsc(applicationId),
-                applicationStatementOtpService.listViews(tenantId, applicationId));
+                applicationStatementOtpService.listViews(tenantId, applicationId),
+                applicationVariableService.answers(tenantId, applicationId));
     }
 
     @Transactional
@@ -725,7 +735,8 @@ public class ApplicationService {
     static ApplicationDtos.LoanRequestApplicationResponse toResponse(
             LoanRequestApplication application,
             List<ApplicationStatusHistory> history,
-            List<ApplicationStatementOtpService.StatementOtpView> statementOtps) {
+            List<ApplicationStatementOtpService.StatementOtpView> statementOtps,
+            List<com.credvenn.lm.applicationvariable.ApplicationVariableDtos.AnswerResponse> applicationVariables) {
         return new ApplicationDtos.LoanRequestApplicationResponse(
                 application.getId(),
                 application.getTenantId(),
@@ -777,7 +788,8 @@ public class ApplicationService {
                                 item.getToStatus(),
                                 item.getChangedBy(),
                                 item.getReason()))
-                        .toList());
+                        .toList(),
+                applicationVariables);
     }
 
     private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {

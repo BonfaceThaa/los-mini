@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.client.ClientRecordService;
+import com.credvenn.lm.applicationvariable.ApplicationVariableService;
 import com.credvenn.lm.fineract.FineractGateway;
 import com.credvenn.lm.inventory.InventoryDeviceAssignmentRepository;
 import com.credvenn.lm.kyc.KycCheckRepository;
@@ -45,7 +46,8 @@ class ApplicationServiceStatementOtpResponseTest {
                 applicationStatementOtpService,
                 mock(ApplicationEventPublisher.class),
                 mock(SubscriptionGuardService.class),
-                mock(SubscriptionBillingService.class));
+                mock(SubscriptionBillingService.class),
+                mock(ApplicationVariableService.class));
 
         LoanRequestApplication application = new LoanRequestApplication();
         setId(application, "app-otp-1");

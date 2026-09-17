@@ -43,7 +43,8 @@ public class ApplicationController {
 
     @PostMapping
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
-    @Operation(summary = "Create a loan request application")
+    @Operation(summary = "Create a loan request application",
+            description = "Validates and stores tenant-defined applicationVariables in the same transaction before the asynchronous KYC workflow starts.")
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> create(
             @Valid @RequestBody ApplicationDtos.CreateLoanRequestApplicationRequest request) {
         var actor = currentActorService.requireCurrentUser();
