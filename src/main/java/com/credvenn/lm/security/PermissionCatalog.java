@@ -5,6 +5,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public enum PermissionCatalog {
+    ORIGINATION_PROFILE_VIEW("ORIGINATION_PROFILE_VIEW", "View tenant origination profiles"),
+    ORIGINATION_PROFILE_CREATE("ORIGINATION_PROFILE_CREATE", "Create tenant origination profiles"),
+    ORIGINATION_PROFILE_UPDATE("ORIGINATION_PROFILE_UPDATE", "Update profiles and tenant origination default"),
     TENANT_CREATE("TENANT_CREATE", "Create tenant businesses during onboarding"),
     TENANT_VIEW_ALL("TENANT_VIEW_ALL", "View all tenants on the SaaS platform"),
     TENANT_MANAGE_ALL("TENANT_MANAGE_ALL", "Manage users and roles across all tenants"),

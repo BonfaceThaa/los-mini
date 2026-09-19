@@ -38,6 +38,12 @@ public class Tenant extends AuditableEntity {
     @Column(name = "statement_analysis_mode", nullable = false, length = 20)
     private TenantStatementAnalysisMode statementAnalysisMode = TenantStatementAnalysisMode.AUTO;
 
+    @Column(name = "default_origination_profile_id", length = 36)
+    private String defaultOriginationProfileId;
+
+    public String getDefaultOriginationProfileId() { return defaultOriginationProfileId; }
+    public void setDefaultOriginationProfileId(String id) { defaultOriginationProfileId = id; }
+
     @PrePersist
     void assignId() {
         if (id == null) {

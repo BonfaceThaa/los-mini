@@ -78,6 +78,54 @@ class OriginationProfileMigrationTest {
         });
     }
 
+    @Test
+    void managementMigrationMapsEntitiesAndDetectsConcurrentUpdates() throws Exception {
+        withDatabase((url, connection) -> {
+            migrate(url, "36");
+            legacyRows(connection, "a");
+            profile(connection, "profile-a", "a", "PHONE_FINANCE");
+            migrate(url, "37");
+            assertEquals(0, scalar(connection, "SELECT version FROM origination_profiles WHERE tenant_id = 'a' AND id = 'profile-a'"));
+            var configuration = new org.hibernate.cfg.Configuration()
+                    .addAnnotatedClass(com.credvenn.lm.origination.OriginationProfile.class)
+                    .addAnnotatedClass(com.credvenn.lm.origination.OriginationProfileAudit.class)
+                    .addAnnotatedClass(com.credvenn.lm.tenant.Tenant.class)
+                    .setProperty("hibernate.connection.url", url)
+                    .setProperty("hibernate.connection.username", USER)
+                    .setProperty("hibernate.connection.password", password())
+                    .setProperty("hibernate.hbm2ddl.auto", "validate");
+            try (var factory = configuration.buildSessionFactory()) {
+                try (var first = factory.openSession(); var second = factory.openSession()) {
+                    var tx1 = first.beginTransaction();
+                    var tx2 = second.beginTransaction();
+                    var query = "from OriginationProfile where tenantId = :tenant and id = :id";
+                    var a = first.createQuery(query, com.credvenn.lm.origination.OriginationProfile.class)
+                            .setParameter("tenant", "a").setParameter("id", "profile-a").getSingleResult();
+                    var b = second.createQuery(query, com.credvenn.lm.origination.OriginationProfile.class)
+                            .setParameter("tenant", "a").setParameter("id", "profile-a").getSingleResult();
+                    a.setDisplayName("Updated name");
+                    var audit = new com.credvenn.lm.origination.OriginationProfileAudit();
+                    audit.setTenantId("a"); audit.setProfileId("profile-a"); audit.setAction("UPDATE");
+                    audit.setChangedBy("test"); audit.setBeforeJson("{}"); audit.setAfterJson("{\"name\":\"Updated name\"}");
+                    first.persist(audit);
+                    tx1.commit();
+                    b.setDisplayName("Stale name");
+                    assertThrows(jakarta.persistence.OptimisticLockException.class, second::flush);
+                    tx2.rollback();
+                }
+                try (var session = factory.openSession()) {
+                    var tx = session.beginTransaction();
+                    var tenant = session.createQuery("from Tenant where id = :tenant", com.credvenn.lm.tenant.Tenant.class)
+                            .setParameter("tenant", "a").getSingleResult();
+                    tenant.setDefaultOriginationProfileId("profile-a");
+                    tx.commit();
+                }
+            }
+            assertEquals(1, scalar(connection, "SELECT version FROM origination_profiles WHERE tenant_id = 'a' AND id = 'profile-a'"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM origination_profile_audit WHERE tenant_id = 'a' AND profile_id = 'profile-a'"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM tenants WHERE id = 'a' AND default_origination_profile_id = 'profile-a'"));
+        });
+    }
     private static void legacyRows(Connection connection, String tenant) throws SQLException {
         // Test-controlled identifiers only; never populated from application input.
         execute(connection, """

@@ -28,7 +28,7 @@ $testPort = ($testBinding -split ':')[-1]
 $env:MARIADB_MIGRATION_TEST_URL = "jdbc:mariadb://127.0.0.1:$testPort/"
 $env:MARIADB_MIGRATION_TEST_PASSWORD = 'migration-test-only'
 try {
-    .\mvnw.cmd '-Dtest=OriginationProfileMigrationTest,PhoneOriginationBaselineTest,ApplicationServiceTest,ApplicationVariableServiceTest' test
+    .\mvnw.cmd '-Dtest=OriginationProfileMigrationTest,OriginationProfileApiTest,PhoneOriginationBaselineTest,ApplicationServiceTest,ApplicationVariableServiceTest' test
 } finally {
     docker stop $testContainer
     Remove-Item Env:MARIADB_MIGRATION_TEST_URL
@@ -39,3 +39,5 @@ try {
 Coverage includes a fresh V1-V36 migration, V35-to-V36 upgrade with legacy records, old-style inserts after migration, nullable columns, valid tenant-local references, rejected cross-tenant references, duplicate profile codes, JSON validation, deletion protection, and repeat Flyway execution.
 
 The existing H2 application-context test cannot substitute for this test: it already fails on the MariaDB ALTER syntax in V5.
+
+V37 management coverage also validates Hibernate mappings for profiles, audit records and tenant defaults, and confirms stale concurrent profile updates are rejected. Profile CRUD contracts are documented in [the API guide](origination-profile-api.md).
