@@ -83,6 +83,61 @@ class ApplicationVariableServiceTest {
         assertTrue(saved.getAnswerValue().contains("Parent"));
     }
 
+    @Test
+    void optionalQuestionsCanBeOmittedIncludingLegacyNullAnswers() {
+        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1"))
+                .thenReturn(List.of(definition("optional", "OPTIONAL", ApplicationVariableFieldType.TEXT, false, "[]")));
+        assertTrue(service.prepare("tenant-1", null).isEmpty());
+        assertTrue(service.prepare("tenant-1", List.of()).isEmpty());
+        verifyNoInteractions(variables);
+    }
+
+    @Test
+    void rejectsDuplicateAnswersAndDuplicateSelections() {
+        var question = definition("usage", "USAGE", ApplicationVariableFieldType.MULTI_SELECT, true,
+                "[{\"value\":\"PERSONAL\",\"label\":\"Personal\"}]");
+        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(question));
+        var answer = new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL"));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(answer, answer)));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+                new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL", "PERSONAL")))));
+        verifyNoInteractions(variables);
+    }
+
+    @Test
+    void requiredTextCannotBeBlankOrReplacedBySelections() {
+        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1"))
+                .thenReturn(List.of(definition("address", "ADDRESS", ApplicationVariableFieldType.TEXT, true, "[]")));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+                new ApplicationVariableDtos.AnswerRequest("address", "   ", List.of()))));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+                new ApplicationVariableDtos.AnswerRequest("address", null, List.of("HOME")))));
+    }
+
+    @Test
+    void savedAnswerKeepsOriginalQuestionAndOptionAfterDefinitionChanges() {
+        var question = definition("usage", "USAGE", ApplicationVariableFieldType.SINGLE_SELECT, true,
+                "[{\"value\":\"PERSONAL\",\"label\":\"Personal use\"}]");
+        question.setDefinitionVersion(3);
+        question.setLabel("Original question");
+        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(question));
+        var prepared = service.prepare("tenant-1", List.of(
+                new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL"))));
+        question.setDefinitionVersion(4);
+        question.setLabel("Changed question");
+        question.setOptionsJson("[]");
+        service.savePrepared("tenant-1", "app-1", prepared);
+        ArgumentCaptor<List<ApplicationVariable>> captor = ArgumentCaptor.forClass(List.class);
+        verify(variables).saveAll(captor.capture());
+        var saved = captor.getValue().getFirst();
+        when(variables.findAllByTenantIdAndApplicationIdOrderByIdAsc("tenant-1", "app-1"))
+                .thenReturn(List.of(saved));
+        assertEquals(3, saved.getDefinitionVersion());
+        assertEquals("Original question", saved.getLabelSnapshot());
+        assertTrue(saved.getAnswerValue().contains("Personal use"));
+        assertEquals(1, service.answers("tenant-1", "app-1").size());
+        verify(variables).findAllByTenantIdAndApplicationIdOrderByIdAsc("tenant-1", "app-1");
+    }
     private ApplicationVariableDefinition definition(String id, String code, ApplicationVariableFieldType type,
             boolean required, String optionsJson) {
         var value = new ApplicationVariableDefinition();

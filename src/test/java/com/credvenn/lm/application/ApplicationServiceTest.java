@@ -296,12 +296,11 @@ class ApplicationServiceTest {
                 eq("app-2"),
                 eq(List.of(DepositPaymentStatus.MATCHED)))).thenReturn(false);
 
-        try {
-            context.service.activateLoan("tenant-1", "app-2", "approver");
-        } catch (Exception ignored) {
-            // Expected because deposit payment is required before final approval.
-        }
-
+        var error = org.junit.jupiter.api.Assertions.assertThrows(
+                com.credvenn.lm.common.exception.BadRequestException.class,
+                () -> context.service.activateLoan("tenant-1", "app-2", "approver"));
+        assertEquals("A matched deposit payment is required before final loan approval", error.getMessage());
+        assertEquals(ApplicationStatus.FINERACT_LOAN_CREATED_PENDING_DEVICE, application.getStatus());
         verify(context.applicationEventPublisher, never()).publishEvent(any());
         verify(context.fineractGateway, never()).activateLoan(any(Tenant.class), any(LoanRequestApplication.class));
     }
