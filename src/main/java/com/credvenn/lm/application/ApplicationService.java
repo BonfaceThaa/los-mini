@@ -1,6 +1,7 @@
 package com.credvenn.lm.application;
 
 import com.credvenn.lm.client.ClientRecordService;
+import com.credvenn.lm.origination.OriginationProfileResolver;
 import com.credvenn.lm.applicationvariable.ApplicationVariableService;
 import com.credvenn.lm.common.api.PagedResponse;
 import com.credvenn.lm.common.api.PaginationSupport;
@@ -77,6 +78,7 @@ public class ApplicationService {
     private final SubscriptionGuardService subscriptionGuardService;
     private final SubscriptionBillingService subscriptionBillingService;
     private final ApplicationVariableService applicationVariableService;
+    private final OriginationProfileResolver originationProfileResolver;
 
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
@@ -94,7 +96,8 @@ public class ApplicationService {
             ApplicationEventPublisher applicationEventPublisher,
             SubscriptionGuardService subscriptionGuardService,
             SubscriptionBillingService subscriptionBillingService,
-            ApplicationVariableService applicationVariableService) {
+            ApplicationVariableService applicationVariableService,
+            OriginationProfileResolver originationProfileResolver) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
         this.kycCheckRepository = kycCheckRepository;
@@ -111,6 +114,7 @@ public class ApplicationService {
         this.subscriptionGuardService = subscriptionGuardService;
         this.subscriptionBillingService = subscriptionBillingService;
         this.applicationVariableService = applicationVariableService;
+        this.originationProfileResolver = originationProfileResolver;
     }
 
     @Transactional
@@ -119,6 +123,7 @@ public class ApplicationService {
             String actor,
             ApplicationDtos.CreateLoanRequestApplicationRequest request) {
         subscriptionGuardService.assertCanCreateApplication(tenantId);
+        String profileId = originationProfileResolver.resolveForApplication(tenantId, request.originationProfileCode());
         List<ApplicationVariableService.PreparedAnswer> preparedVariables = applicationVariableService.prepare(
                 tenantId, request.applicationVariables());
         log.info(
@@ -133,6 +138,7 @@ public class ApplicationService {
                 request.requestedTermMonths());
         LoanRequestApplication application = new LoanRequestApplication();
         application.setTenantId(tenantId);
+        application.setOriginationProfileId(profileId);
         application.setApplicantFirstName(request.applicantFirstName().trim());
         application.setApplicantMiddleName(trimToNull(request.applicantMiddleName()));
         application.setApplicantLastName(request.applicantLastName().trim());
@@ -789,7 +795,8 @@ public class ApplicationService {
                                 item.getChangedBy(),
                                 item.getReason()))
                         .toList(),
-                applicationVariables);
+                applicationVariables,
+                application.getOriginationProfileId());
     }
 
     private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {

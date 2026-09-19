@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.credvenn.lm.origination.OriginationProfileResolver;
 import com.credvenn.lm.client.ClientRecordService;
 import com.credvenn.lm.applicationvariable.ApplicationVariableService;
 import com.credvenn.lm.client.ClientRecord;
@@ -87,6 +88,7 @@ class ApplicationServiceTest {
         ArgumentCaptor<LoanRequestApplication> applicationCaptor = ArgumentCaptor.forClass(LoanRequestApplication.class);
         verify(context.applicationRepository).save(applicationCaptor.capture());
         LoanRequestApplication saved = applicationCaptor.getValue();
+        assertEquals("profile-1", saved.getOriginationProfileId());
         assertEquals("Wanjiku", saved.getApplicantMiddleName());
         assertEquals(LocalDate.of(1995, 5, 10), saved.getDob());
         assertEquals("Female", saved.getGender());
@@ -373,6 +375,7 @@ class ApplicationServiceTest {
         private final SubscriptionBillingService subscriptionBillingService = mock(SubscriptionBillingService.class);
         private final ClientRecordService clientRecordService = mock(ClientRecordService.class);
         private final ApplicationVariableService applicationVariableService = mock(ApplicationVariableService.class);
+        private final OriginationProfileResolver profiles = mock(OriginationProfileResolver.class);
         private final ApplicationService service = new ApplicationService(
                 applicationRepository,
                 statusHistoryRepository,
@@ -389,9 +392,10 @@ class ApplicationServiceTest {
                 applicationEventPublisher,
                 subscriptionGuardService,
                 subscriptionBillingService,
-                applicationVariableService);
+                applicationVariableService, profiles);
 
         private TestContext() {
+            when(profiles.resolveForApplication("tenant-1", null)).thenReturn("profile-1");
             when(applicationStatementOtpService.listViews(anyString(), anyString())).thenReturn(List.of());
         }
     }

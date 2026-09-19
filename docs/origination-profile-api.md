@@ -86,7 +86,7 @@ The corrected phone requirement set above and the complete legacy phone set can 
 
 ## Scope of this increment
 
-V37 adds technical profile locking and append-only profile/default change history. No profiles or defaults are automatically seeded, and existing applications/products/questions are not backfilled. Application creation and offer selection do not consume profiles yet: that is the next integration step.
+V37 adds technical profile locking and append-only profile/default change history. V38 seeds or reuses compatible legacy profiles and backfills existing application/product references; see [the backfill guide](origination-backfill.md). Application creation now resolves and saves a profile, as described below. Offer filtering and profile-specific questionnaires still need their later integration.
 
 Existing KYC and statement modes continue to govern the phone journey. `STATEMENT_ACCEPTED` denotes the existing accepted-or-configured-bypass behavior; storing the profile does not override those tenant settings.
 
@@ -125,3 +125,41 @@ For example, replace `0` with the version returned by GET:
 ```
 
 The profile can remain active during this update. Historical audit entries are preserved. Application services still execute their existing hardcoded checks; a requirement evaluator is a separate implementation step.
+
+## Resolving profiles when creating applications
+
+`POST /api/v1/applications` now accepts optional `originationProfileCode`:
+
+```json
+{
+  "applicantFirstName": "Mary",
+  "applicantLastName": "Wanjiku",
+  "phoneNumber": "254700000000",
+  "nationalId": "12345678",
+  "applicantIdType": "NATIONAL_ID",
+  "requestedAmount": 20000,
+  "originationProfileCode": "PHONE_FINANCE",
+  "applicationVariables": []
+}
+```
+
+Use your existing profile's code; it need not be `PHONE_FINANCE`. Supply any required tenant questionnaire answers as before. Tenant identity is taken from the authenticated caller. Only `LOAN_CREATE` is required; profile administration permissions are not needed.
+
+- An explicit code is trimmed, normalised and resolved within the authenticated tenant. It overrides the default and can be used when no default exists.
+- An omitted or null code resolves the tenant's configured default. Blank/invalid codes are errors, not fallback requests.
+- Unknown or other-tenant codes return 404. Inactive profiles, missing defaults and unsupported workflow requirements return 400. Unavailable default references or malformed stored configuration return 409.
+- Resolution occurs after the subscription guard and before questionnaire processing, persistence, OTP creation or workflow events. It uses the application's transaction and locks the tenant and selected profile against concurrent administrative changes. Locking profile reads avoid stale MariaDB repeatable-read snapshots.
+- The application saves the profile ID in the existing V36 column. Create, detail and list responses include `originationProfileId`. Reading an existing application uses its stored ID, even after a default changes or a profile is deactivated; legacy rows awaiting backfill may return null.
+- No profile is implicitly created. Configure/activate a default for existing integrations that omit the new field.
+
+Example response excerpt:
+
+```json
+{
+  "id": "<application-uuid>",
+  "status": "PENDING_KYC",
+  "originationProfileId": "<resolved-profile-uuid>"
+}
+```
+
+No additional migration is required. Application creation now fills this reference on new records; product creation still needs its later integration. Product filtering, profile-specific questionnaire filtering and requirement-driven workflow execution are separate steps; the current questionnaire validation and asynchronous KYC startup remain in place. Only the supported phone configurations can currently be used.

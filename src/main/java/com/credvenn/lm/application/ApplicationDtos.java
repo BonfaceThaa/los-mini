@@ -33,7 +33,16 @@ public final class ApplicationDtos {
             @Size(max = 100) String statementOtp,
             @NotNull @Positive BigDecimal requestedAmount,
             @Positive Integer requestedTermMonths,
-            @Valid @Size(max = 100) List<ApplicationVariableDtos.AnswerRequest> applicationVariables) {
+            @Valid @Size(max = 100) List<ApplicationVariableDtos.AnswerRequest> applicationVariables,
+            @Schema(description = "Tenant-local origination profile code; omitted or null uses the configured tenant default", example = "PHONE_FINANCE")
+            @Size(max = 100) String originationProfileCode) {
+        public CreateLoanRequestApplicationRequest(String applicantFirstName, String applicantMiddleName,
+                String applicantLastName, String phoneNumber, String nationalId, ApplicantIdType applicantIdType,
+                LocalDate dob, String gender, String statementOtp, BigDecimal requestedAmount, Integer requestedTermMonths,
+                List<ApplicationVariableDtos.AnswerRequest> applicationVariables) {
+            this(applicantFirstName, applicantMiddleName, applicantLastName, phoneNumber, nationalId, applicantIdType,
+                    dob, gender, statementOtp, requestedAmount, requestedTermMonths, applicationVariables, null);
+        }
         public CreateLoanRequestApplicationRequest(String applicantFirstName, String applicantMiddleName,
                 String applicantLastName, String phoneNumber, String nationalId, ApplicantIdType applicantIdType,
                 LocalDate dob, String gender, String statementOtp, BigDecimal requestedAmount, Integer requestedTermMonths) {
@@ -152,6 +161,7 @@ public final class ApplicationDtos {
             Instant updatedAt,
             List<ApplicationStatusHistoryResponse> statusHistory,
             @ArraySchema(schema = @Schema(implementation = ApplicationVariableDtos.AnswerResponse.class))
-            List<ApplicationVariableDtos.AnswerResponse> applicationVariables) {
+            List<ApplicationVariableDtos.AnswerResponse> applicationVariables,
+            @Schema(description = "Stored origination profile ID; may be null on records awaiting backfill") String originationProfileId) {
     }
 }

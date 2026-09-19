@@ -126,7 +126,7 @@ class OriginationProfileMigrationTest {
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM tenants WHERE id = 'a' AND default_origination_profile_id = 'profile-a'"));
         });
     }
-    private static void legacyRows(Connection connection, String tenant) throws SQLException {
+    static void legacyRows(Connection connection, String tenant) throws SQLException {
         // Test-controlled identifiers only; never populated from application input.
         execute(connection, """
                 INSERT INTO tenants (id, code, name, fineract_tenant_id, created_at, updated_at)
@@ -172,16 +172,16 @@ class OriginationProfileMigrationTest {
         }
     }
 
-    private static void migrate(String url, String target) {
+    static void migrate(String url, String target) {
         Flyway.configure().dataSource(url, USER, password()).locations("classpath:db/migration")
                 .target(target).load().migrate();
     }
 
-    private static void execute(Connection connection, String sql) throws SQLException {
+    static void execute(Connection connection, String sql) throws SQLException {
         try (var statement = connection.createStatement()) { statement.execute(sql); }
     }
 
-    private static int scalar(Connection connection, String sql) throws SQLException {
+    static int scalar(Connection connection, String sql) throws SQLException {
         try (var statement = connection.createStatement(); var rows = statement.executeQuery(sql)) {
             assertTrue(rows.next());
             return rows.getInt(1);
@@ -194,7 +194,7 @@ class OriginationProfileMigrationTest {
 
     private static String password() { return System.getenv("MARIADB_MIGRATION_TEST_PASSWORD"); }
 
-    private static void withDatabase(DatabaseAction action) throws Exception {
+    static void withDatabase(DatabaseAction action) throws Exception {
         String baseUrl = System.getenv("MARIADB_MIGRATION_TEST_URL");
         if (!baseUrl.matches("jdbc:mariadb://(127\\.0\\.0\\.1|localhost):[0-9]+/")) {
             throw new IllegalArgumentException("Use a dedicated local MariaDB server URL ending in / and without a database name");
@@ -211,5 +211,5 @@ class OriginationProfileMigrationTest {
     }
 
     @FunctionalInterface private interface SqlAction { void run() throws SQLException; }
-    @FunctionalInterface private interface DatabaseAction { void run(String url, Connection connection) throws Exception; }
+    @FunctionalInterface interface DatabaseAction { void run(String url, Connection connection) throws Exception; }
 }

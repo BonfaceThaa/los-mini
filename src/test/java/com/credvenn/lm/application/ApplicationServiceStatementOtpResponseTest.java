@@ -47,7 +47,8 @@ class ApplicationServiceStatementOtpResponseTest {
                 mock(ApplicationEventPublisher.class),
                 mock(SubscriptionGuardService.class),
                 mock(SubscriptionBillingService.class),
-                mock(ApplicationVariableService.class));
+                mock(ApplicationVariableService.class),
+                mock(com.credvenn.lm.origination.OriginationProfileResolver.class));
 
         LoanRequestApplication application = new LoanRequestApplication();
         setId(application, "app-otp-1");

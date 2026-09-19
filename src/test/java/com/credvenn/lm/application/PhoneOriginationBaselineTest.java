@@ -48,6 +48,7 @@ class PhoneOriginationBaselineTest {
     @Mock SubscriptionGuardService subscriptions;
     @Mock SubscriptionBillingService billing;
     @Mock ApplicationVariableService variables;
+    @Mock com.credvenn.lm.origination.OriginationProfileResolver profiles;
     @InjectMocks ApplicationService service;
 
     private LoanRequestApplication application;
