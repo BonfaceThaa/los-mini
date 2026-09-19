@@ -93,6 +93,7 @@ class ApplicationOriginationProfileTest {
             when(profiles.findForApplicationByTenantIdAndId("tenant-1", "profile-default")).thenReturn(Optional.of(profile));
         } else when(profiles.findForApplicationByTenantIdAndCodeIgnoreCase("tenant-1", "CUSTOM_PHONE")).thenReturn(Optional.of(profile));
         var response = service.create("tenant-1", "officer", request(code));
+        verify(variables).prepare("tenant-1", profile.getId(), List.of());
         assertEquals(profile.getId(), response.originationProfileId());
         assertEquals(ApplicationStatus.PENDING_KYC, response.status());
         assertEquals(profile.getId(), stored.get(response.id()).getOriginationProfileId());

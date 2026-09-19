@@ -25,10 +25,20 @@ public class ApplicationVariableController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('LOAN_CREATE','APPLICATION_VARIABLE_MANAGE')")
-    @Operation(summary = "Get the tenant application questionnaire", description = "Returns questions in display order. Use activeOnly=true to render a loan request form.")
+    @Operation(summary = "Get the tenant application questionnaire", description = "Returns shared and profile-specific questions in display order. Omitted profile code uses the tenant default.")
     public ResponseEntity<List<ApplicationVariableDtos.DefinitionResponse>> list(
-            @Parameter(description = "Exclude inactive questions") @RequestParam(defaultValue = "true") boolean activeOnly) {
-        return ResponseEntity.ok(service.list(currentActorService.requireCurrentUser().tenantId(), activeOnly));
+            @Parameter(description = "Exclude inactive questions") @RequestParam(defaultValue = "true") boolean activeOnly,
+            @RequestParam(required = false) String originationProfileCode) {
+        return ResponseEntity.ok(service.list(currentActorService.requireCurrentUser().tenantId(), activeOnly, originationProfileCode));
+    }
+
+    @GetMapping("/all")
+    @PreAuthorize("hasAuthority('APPLICATION_VARIABLE_MANAGE')")
+    @Operation(summary = "List definitions for administration", description = "All profiles and shared questions, including drafts. Optional profile code filters to that profile plus shared questions.")
+    public ResponseEntity<List<ApplicationVariableDtos.DefinitionResponse>> listAll(
+            @RequestParam(defaultValue = "false") boolean activeOnly,
+            @RequestParam(required = false) String originationProfileCode) {
+        return ResponseEntity.ok(service.listAll(currentActorService.requireCurrentUser().tenantId(), activeOnly, originationProfileCode));
     }
 
     @PostMapping

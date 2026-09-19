@@ -14,7 +14,9 @@ class ApplicationVariableServiceTest {
     private final ApplicationVariableDefinitionRepository definitions = mock(ApplicationVariableDefinitionRepository.class);
     private final ApplicationVariableRepository variables = mock(ApplicationVariableRepository.class);
     private final ObjectMapper json = new ObjectMapper();
-    private final ApplicationVariableService service = new ApplicationVariableService(definitions, variables, json);
+    private final ApplicationVariableService service = new ApplicationVariableService(definitions, variables, json,
+            mock(com.credvenn.lm.origination.OriginationProfileRepository.class), mock(com.credvenn.lm.origination.OriginationProfileResolver.class),
+            new com.credvenn.lm.origination.OriginationProfileValidator(), mock(com.credvenn.lm.tenant.TenantRepository.class));
 
     @Test
     void preparesTextSingleAndMultipleAnswers() throws Exception {
@@ -24,9 +26,9 @@ class ApplicationVariableServiceTest {
         var income = definition("income", "INCOME_SOURCES", ApplicationVariableFieldType.MULTI_SELECT, true,
                 "[{\"value\":\"SALARY\",\"label\":\"Salary\"},{\"value\":\"FARMING\",\"label\":\"Farming\"}]");
         income.setMinimumSelections(1); income.setMaximumSelections(2);
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(name, relationship, income));
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of(name, relationship, income));
 
-        var prepared = service.prepare("tenant-1", List.of(
+        var prepared = service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("name", " Jane Doe ", List.of()),
                 new ApplicationVariableDtos.AnswerRequest("relationship", null, List.of("PARENT")),
                 new ApplicationVariableDtos.AnswerRequest("income", null, List.of("SALARY", "FARMING"))));
@@ -37,15 +39,15 @@ class ApplicationVariableServiceTest {
 
     @Test
     void rejectsMissingRequiredQuestion() {
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1"))
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1"))
                 .thenReturn(List.of(definition("required", "REQUIRED", ApplicationVariableFieldType.TEXT, true, "[]")));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of()));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1", List.of()));
     }
 
     @Test
     void rejectsUnknownCrossTenantDefinition() {
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of());
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1",
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of());
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1",
                 List.of(new ApplicationVariableDtos.AnswerRequest("other-tenant-id", "value", List.of()))));
     }
 
@@ -56,10 +58,10 @@ class ApplicationVariableServiceTest {
         var multi = definition("multi", "MULTI", ApplicationVariableFieldType.MULTI_SELECT, false,
                 "[{\"value\":\"A\",\"label\":\"A\"},{\"value\":\"B\",\"label\":\"B\"}]");
         multi.setMaximumSelections(1);
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(single, multi));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1",
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of(single, multi));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1",
                 List.of(new ApplicationVariableDtos.AnswerRequest("single", null, List.of("YES", "NO")))));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1",
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1",
                 List.of(new ApplicationVariableDtos.AnswerRequest("multi", null, List.of("A", "B")))));
     }
 
@@ -67,9 +69,9 @@ class ApplicationVariableServiceTest {
     void persistsDefinitionAndAnswerSnapshots() {
         var definition = definition("relationship", "RELATIONSHIP", ApplicationVariableFieldType.SINGLE_SELECT, true,
                 "[{\"value\":\"PARENT\",\"label\":\"Parent\"}]");
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(definition));
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of(definition));
         when(variables.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        var prepared = service.prepare("tenant-1", List.of(
+        var prepared = service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("relationship", null, List.of("PARENT"))));
 
         service.savePrepared("tenant-1", "app-1", prepared);
@@ -85,10 +87,10 @@ class ApplicationVariableServiceTest {
 
     @Test
     void optionalQuestionsCanBeOmittedIncludingLegacyNullAnswers() {
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1"))
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1"))
                 .thenReturn(List.of(definition("optional", "OPTIONAL", ApplicationVariableFieldType.TEXT, false, "[]")));
-        assertTrue(service.prepare("tenant-1", null).isEmpty());
-        assertTrue(service.prepare("tenant-1", List.of()).isEmpty());
+        assertTrue(service.prepare("tenant-1", "profile-1", null).isEmpty());
+        assertTrue(service.prepare("tenant-1", "profile-1", List.of()).isEmpty());
         verifyNoInteractions(variables);
     }
 
@@ -96,21 +98,21 @@ class ApplicationVariableServiceTest {
     void rejectsDuplicateAnswersAndDuplicateSelections() {
         var question = definition("usage", "USAGE", ApplicationVariableFieldType.MULTI_SELECT, true,
                 "[{\"value\":\"PERSONAL\",\"label\":\"Personal\"}]");
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(question));
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of(question));
         var answer = new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL"));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(answer, answer)));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1", List.of(answer, answer)));
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL", "PERSONAL")))));
         verifyNoInteractions(variables);
     }
 
     @Test
     void requiredTextCannotBeBlankOrReplacedBySelections() {
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1"))
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1"))
                 .thenReturn(List.of(definition("address", "ADDRESS", ApplicationVariableFieldType.TEXT, true, "[]")));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("address", "   ", List.of()))));
-        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", List.of(
+        assertThrows(BadRequestException.class, () -> service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("address", null, List.of("HOME")))));
     }
 
@@ -120,8 +122,8 @@ class ApplicationVariableServiceTest {
                 "[{\"value\":\"PERSONAL\",\"label\":\"Personal use\"}]");
         question.setDefinitionVersion(3);
         question.setLabel("Original question");
-        when(definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc("tenant-1")).thenReturn(List.of(question));
-        var prepared = service.prepare("tenant-1", List.of(
+        when(definitions.findApplicableForCreation("tenant-1", "profile-1")).thenReturn(List.of(question));
+        var prepared = service.prepare("tenant-1", "profile-1", List.of(
                 new ApplicationVariableDtos.AnswerRequest("usage", null, List.of("PERSONAL"))));
         question.setDefinitionVersion(4);
         question.setLabel("Changed question");

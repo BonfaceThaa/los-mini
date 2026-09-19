@@ -28,7 +28,7 @@ $testPort = ($testBinding -split ':')[-1]
 $env:MARIADB_MIGRATION_TEST_URL = "jdbc:mariadb://127.0.0.1:$testPort/"
 $env:MARIADB_MIGRATION_TEST_PASSWORD = 'migration-test-only'
 try {
-    .\mvnw.cmd '-Dtest=ApplicationOriginationProfileTest,ApplicationProfilePersistenceTest,OriginationBackfillMigrationTest,OriginationProfileMigrationTest,OriginationProfileApiTest,PhoneOriginationBaselineTest,ApplicationServiceTest,ApplicationVariableServiceTest' test
+    .\mvnw.cmd '-Dtest=ApplicationVariableScopeApiTest,ApplicationVariableScopePersistenceTest,ApplicationOriginationProfileTest,ApplicationProfilePersistenceTest,OriginationBackfillMigrationTest,OriginationProfileMigrationTest,OriginationProfileApiTest,PhoneOriginationBaselineTest,ApplicationServiceTest,ApplicationVariableServiceTest' test
 } finally {
     docker stop $testContainer
     Remove-Item Env:MARIADB_MIGRATION_TEST_URL
@@ -45,3 +45,5 @@ V37 management coverage also validates Hibernate mappings for profiles, audit re
 V38 seeding and historical selection matching are documented in [the backfill guide](origination-backfill.md).
 
 ApplicationProfilePersistenceTest validates application profile persistence with real Hibernate repositories and confirms locking profile reads see a concurrent deactivation despite an older MariaDB transaction snapshot.
+
+ApplicationVariableScopePersistenceTest validates shared/profile-specific definition queries, required-answer validation, tenant isolation and immutable answer snapshots on MariaDB. See [questionnaire scopes](application-variable-scopes.md).

@@ -86,7 +86,7 @@ The corrected phone requirement set above and the complete legacy phone set can 
 
 ## Scope of this increment
 
-V37 adds technical profile locking and append-only profile/default change history. V38 seeds or reuses compatible legacy profiles and backfills existing application/product references; see [the backfill guide](origination-backfill.md). Application creation now resolves and saves a profile, as described below. Offer filtering and profile-specific questionnaires still need their later integration.
+V37 adds technical profile locking and append-only profile/default change history. V38 seeds or reuses compatible legacy profiles and backfills existing application/product references; see [the backfill guide](origination-backfill.md). Application creation now resolves and saves a profile, as described below. Profile-specific questionnaires are now integrated; see [questionnaire scopes](application-variable-scopes.md). Offer filtering still needs its later integration.
 
 Existing KYC and statement modes continue to govern the phone journey. `STATEMENT_ACCEPTED` denotes the existing accepted-or-configured-bypass behavior; storing the profile does not override those tenant settings.
 
@@ -162,4 +162,4 @@ Example response excerpt:
 }
 ```
 
-No additional migration is required. Application creation now fills this reference on new records; product creation still needs its later integration. Product filtering, profile-specific questionnaire filtering and requirement-driven workflow execution are separate steps; the current questionnaire validation and asynchronous KYC startup remain in place. Only the supported phone configurations can currently be used.
+No additional migration is required. Application creation now fills this reference on new records; product creation still needs its later integration. Questionnaire listing and validation now use shared definitions plus those for the resolved profile. Product filtering and requirement-driven workflow execution remain separate steps. Asynchronous KYC startup remains in place. Only the supported phone configurations can currently be used.

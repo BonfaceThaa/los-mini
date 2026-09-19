@@ -1,6 +1,8 @@
 package com.credvenn.lm.applicationvariable;
 
 import com.credvenn.lm.common.exception.*;
+import com.credvenn.lm.origination.*;
+import com.credvenn.lm.tenant.TenantRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.*;
@@ -14,55 +16,80 @@ public class ApplicationVariableService {
     private final ApplicationVariableDefinitionRepository definitions;
     private final ApplicationVariableRepository variables;
     private final ObjectMapper objectMapper;
+    private final OriginationProfileRepository profiles;
+    private final OriginationProfileResolver profileResolver;
+    private final OriginationProfileValidator profileValidator;
+    private final TenantRepository tenants;
 
     public ApplicationVariableService(ApplicationVariableDefinitionRepository definitions,
-            ApplicationVariableRepository variables, ObjectMapper objectMapper) {
+            ApplicationVariableRepository variables, ObjectMapper objectMapper,
+            OriginationProfileRepository profiles, OriginationProfileResolver profileResolver,
+            OriginationProfileValidator profileValidator, TenantRepository tenants) {
         this.definitions = definitions; this.variables = variables; this.objectMapper = objectMapper;
+        this.profiles = profiles; this.profileResolver = profileResolver; this.profileValidator = profileValidator; this.tenants = tenants;
     }
 
     @Transactional(readOnly = true)
-    public List<ApplicationVariableDtos.DefinitionResponse> list(String tenantId, boolean activeOnly) {
+    public List<ApplicationVariableDtos.DefinitionResponse> listAll(String tenantId, boolean activeOnly, String profileCode) {
+        if (profileCode != null) return definitions.findApplicable(tenantId, profileId(tenantId, profileCode), activeOnly)
+                .stream().map(this::toDefinitionResponse).toList();
         var items = activeOnly ? definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(tenantId)
                 : definitions.findAllByTenantIdOrderByDisplayOrderAsc(tenantId);
         return items.stream().map(this::toDefinitionResponse).toList();
     }
 
     @Transactional
+    public List<ApplicationVariableDtos.DefinitionResponse> list(String tenantId, boolean activeOnly, String profileCode) {
+        String profileId = profileResolver.resolveForApplication(tenantId, profileCode);
+        var items = activeOnly ? definitions.findApplicableForCreation(tenantId, profileId)
+                : definitions.findApplicable(tenantId, profileId, false);
+        return items.stream().map(this::toDefinitionResponse).toList();
+    }
+
+    @Transactional
     public ApplicationVariableDtos.DefinitionResponse create(String tenantId, ApplicationVariableDtos.DefinitionRequest request) {
+        lockTenant(tenantId);
+        String scope = profileId(tenantId, request.originationProfileCode());
         String code = normalizeCode(request.code());
         if (definitions.existsByTenantIdAndCodeIgnoreCase(tenantId, code)) throw new ConflictException("Application question code already exists");
         ApplicationVariableDefinition definition = new ApplicationVariableDefinition();
         definition.setTenantId(tenantId); definition.setCode(code); definition.setActive(true);
+        definition.setOriginationProfileId(scope);
         apply(definition, request, false);
         return toDefinitionResponse(definitions.save(definition));
     }
 
     @Transactional
     public ApplicationVariableDtos.DefinitionResponse update(String tenantId, String id, ApplicationVariableDtos.DefinitionRequest request) {
+        lockTenant(tenantId);
         ApplicationVariableDefinition definition = requiredDefinition(tenantId, id);
         if (!definition.getCode().equals(normalizeCode(request.code()))) throw new BadRequestException("Question code cannot be changed");
+        String scope = profileId(tenantId, request.originationProfileCode());
         apply(definition, request, true);
+        definition.setOriginationProfileId(scope);
         return toDefinitionResponse(definitions.save(definition));
     }
 
     @Transactional
     public ApplicationVariableDtos.DefinitionResponse setActive(String tenantId, String id, boolean active) {
+        lockTenant(tenantId);
         ApplicationVariableDefinition definition = requiredDefinition(tenantId, id);
         definition.setActive(active); definition.setDefinitionVersion(definition.getDefinitionVersion() + 1);
         return toDefinitionResponse(definitions.save(definition));
     }
 
-    @Transactional(readOnly = true)
-    public List<PreparedAnswer> prepare(String tenantId, List<ApplicationVariableDtos.AnswerRequest> input) {
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public List<PreparedAnswer> prepare(String tenantId, String profileId, List<ApplicationVariableDtos.AnswerRequest> input) {
+        if (profileId == null || profileId.isBlank()) throw new BadRequestException("An origination profile is required for questionnaire validation");
         List<ApplicationVariableDtos.AnswerRequest> answers = input == null ? List.of() : input;
-        List<ApplicationVariableDefinition> active = definitions.findAllByTenantIdAndActiveTrueOrderByDisplayOrderAsc(tenantId);
+        List<ApplicationVariableDefinition> active = definitions.findApplicableForCreation(tenantId, profileId);
         Map<String, ApplicationVariableDefinition> byId = active.stream().collect(Collectors.toMap(ApplicationVariableDefinition::getId, Function.identity()));
         Set<String> submitted = new HashSet<>();
         List<PreparedAnswer> prepared = new ArrayList<>();
         for (var answer : answers) {
             if (!submitted.add(answer.definitionId())) throw new BadRequestException("Question was answered more than once: " + answer.definitionId());
             ApplicationVariableDefinition definition = byId.get(answer.definitionId());
-            if (definition == null) throw new BadRequestException("Unknown, inactive, or cross-tenant application question: " + answer.definitionId());
+            if (definition == null) throw new BadRequestException("Unknown, inactive, cross-tenant, or out-of-profile application question: " + answer.definitionId());
             prepared.add(validateAndPrepare(definition, answer));
         }
         for (ApplicationVariableDefinition definition : active) {
@@ -134,8 +161,17 @@ public class ApplicationVariableService {
         if (incrementVersion) definition.setDefinitionVersion(definition.getDefinitionVersion() + 1);
     }
 
+    private void lockTenant(String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) throw new ForbiddenOperationException("A tenant user is required");
+        tenants.findForOriginationUpdate(tenantId).orElseThrow(() -> new NotFoundException("Tenant not found"));
+    }
+    private String profileId(String tenantId, String code) {
+        if (code == null) return null;
+        return profiles.findByTenantIdAndCodeIgnoreCase(tenantId, profileValidator.normalizeCode(code))
+                .orElseThrow(() -> new NotFoundException("Origination profile not found")).getId();
+    }
     private ApplicationVariableDefinition requiredDefinition(String tenantId, String id) { return definitions.findByIdAndTenantId(id, tenantId).orElseThrow(() -> new NotFoundException("Application question not found")); }
-    private ApplicationVariableDtos.DefinitionResponse toDefinitionResponse(ApplicationVariableDefinition d) { return new ApplicationVariableDtos.DefinitionResponse(d.getId(), d.getCode(), d.getLabel(), d.getSectionName(), d.getFieldType(), d.isRequired(), d.isActive(), d.getDisplayOrder(), d.getDefinitionVersion(), d.getMinimumSelections(), d.getMaximumSelections(), readOptions(d.getOptionsJson())); }
+    private ApplicationVariableDtos.DefinitionResponse toDefinitionResponse(ApplicationVariableDefinition d) { return new ApplicationVariableDtos.DefinitionResponse(d.getId(), d.getCode(), d.getLabel(), d.getSectionName(), d.getFieldType(), d.isRequired(), d.isActive(), d.getDisplayOrder(), d.getDefinitionVersion(), d.getMinimumSelections(), d.getMaximumSelections(), readOptions(d.getOptionsJson()), d.getOriginationProfileId()); }
     private ApplicationVariableDtos.AnswerResponse toAnswerResponse(ApplicationVariable v) { AnswerSnapshot a = read(v.getAnswerValue()); return new ApplicationVariableDtos.AnswerResponse(v.getDefinitionId(), v.getDefinitionVersion(), v.getCodeSnapshot(), v.getLabelSnapshot(), v.getSectionSnapshot(), v.getFieldTypeSnapshot(), a.textValue(), a.selectedValues()); }
     private String normalizeCode(String value) { return value.trim().toUpperCase(Locale.ROOT); }
     private String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }

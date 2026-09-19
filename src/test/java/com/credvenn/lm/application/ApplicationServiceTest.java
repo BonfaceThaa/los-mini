@@ -99,7 +99,7 @@ class ApplicationServiceTest {
         assertEquals("Female", response.gender());
         assertEquals("432198", response.statementOtp());
         verify(context.applicationStatementOtpService).createInitialOtp("tenant-1", saved.getId(), "432198");
-        verify(context.applicationVariableService).prepare("tenant-1", List.of());
+        verify(context.applicationVariableService).prepare("tenant-1", "profile-1", List.of());
         verify(context.applicationVariableService).savePrepared(eq("tenant-1"), eq(saved.getId()), any());
     }
 

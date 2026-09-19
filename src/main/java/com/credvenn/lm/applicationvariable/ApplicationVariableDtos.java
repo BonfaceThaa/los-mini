@@ -23,12 +23,19 @@ public final class ApplicationVariableDtos {
             @PositiveOrZero Integer displayOrder,
             @PositiveOrZero Integer minimumSelections,
             @Positive Integer maximumSelections,
-            @Valid List<Option> options) {}
+            @Valid List<Option> options,
+            @Size(max = 100) @Schema(description = "Tenant profile code; null or omitted means shared, including on PUT") String originationProfileCode) {
+        public DefinitionRequest(String code, String label, String sectionName, ApplicationVariableFieldType fieldType,
+                boolean required, Integer displayOrder, Integer minimumSelections, Integer maximumSelections, List<Option> options) {
+            this(code, label, sectionName, fieldType, required, displayOrder, minimumSelections, maximumSelections, options, null);
+        }
+    }
 
     @Schema(name = "ApplicationVariableDefinitionResponse")
     public record DefinitionResponse(String id, String code, String label, String sectionName,
             ApplicationVariableFieldType fieldType, boolean required, boolean active, int displayOrder,
-            int definitionVersion, Integer minimumSelections, Integer maximumSelections, List<Option> options) {}
+            int definitionVersion, Integer minimumSelections, Integer maximumSelections, List<Option> options,
+            @Schema(description = "Null for shared questions") String originationProfileId) {}
 
     @Schema(name = "ApplicationVariableAnswerRequest")
     public record AnswerRequest(

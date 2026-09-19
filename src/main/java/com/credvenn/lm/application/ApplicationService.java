@@ -125,7 +125,7 @@ public class ApplicationService {
         subscriptionGuardService.assertCanCreateApplication(tenantId);
         String profileId = originationProfileResolver.resolveForApplication(tenantId, request.originationProfileCode());
         List<ApplicationVariableService.PreparedAnswer> preparedVariables = applicationVariableService.prepare(
-                tenantId, request.applicationVariables());
+                tenantId, profileId, request.applicationVariables());
         log.info(
                 "Creating loan application for tenantId={} applicant={} {} phone={} nationalId={} applicantIdType={} requestedAmount={} requestedTermMonths={}",
                 tenantId,

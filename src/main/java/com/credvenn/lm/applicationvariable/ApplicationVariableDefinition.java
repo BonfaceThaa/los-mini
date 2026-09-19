@@ -9,6 +9,7 @@ import java.util.UUID;
 public class ApplicationVariableDefinition extends AuditableEntity {
     @Id @Column(length = 36) private String id;
     @Column(name = "tenant_id", nullable = false, length = 36) private String tenantId;
+    @Column(name = "origination_profile_id", length = 36) private String originationProfileId;
     @Column(nullable = false, length = 100) private String code;
     @Column(nullable = false) private String label;
     @Column(name = "section_name") private String sectionName;
@@ -24,6 +25,8 @@ public class ApplicationVariableDefinition extends AuditableEntity {
     @PrePersist void assignId() { if (id == null) id = UUID.randomUUID().toString(); }
     public String getId() { return id; }
     public String getTenantId() { return tenantId; } public void setTenantId(String value) { tenantId = value; }
+    public String getOriginationProfileId() { return originationProfileId; }
+    public void setOriginationProfileId(String value) { originationProfileId = value; }
     public String getCode() { return code; } public void setCode(String value) { code = value; }
     public String getLabel() { return label; } public void setLabel(String value) { label = value; }
     public String getSectionName() { return sectionName; } public void setSectionName(String value) { sectionName = value; }

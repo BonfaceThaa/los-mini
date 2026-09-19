@@ -279,10 +279,11 @@ class PhoneOriginationBaselineTest {
     }
     @Test
     void invalidQuestionnaireStopsCreationBeforePersistenceOrEvents() {
+        when(profiles.resolveForApplication("tenant-1", null)).thenReturn("profile-1");
         var request = new ApplicationDtos.CreateLoanRequestApplicationRequest("Mary", null, "Wanjiku",
                 "0700000000", "12345678", ApplicantIdType.NATIONAL_ID, null, null, null,
                 new BigDecimal("20000"), 4);
-        when(variables.prepare("tenant-1", List.of())).thenThrow(new BadRequestException("Required question missing"));
+        when(variables.prepare("tenant-1", "profile-1", List.of())).thenThrow(new BadRequestException("Required question missing"));
         assertThrows(BadRequestException.class, () -> service.create("tenant-1", "officer", request));
         verifyNoInteractions(applications, history, events, clients, fineract, otps);
         verify(variables, never()).savePrepared(anyString(), anyString(), anyList());
