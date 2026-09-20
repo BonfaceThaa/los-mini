@@ -6,6 +6,7 @@ import com.credvenn.lm.application.*;
 import com.credvenn.lm.applicationvariable.*;
 import com.credvenn.lm.fineract.FineractLoanProductController;
 import com.credvenn.lm.loanproduct.*;
+import com.credvenn.lm.logbook.*;
 import com.credvenn.lm.origination.*;
 import com.credvenn.lm.security.*;
 import com.credvenn.lm.statement.StatementAnalysisService;
@@ -54,7 +55,13 @@ class OriginationOpenApiTest {
         try (var validatorFactory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
             assertTrue(validatorFactory.getValidator().validate(request).isEmpty());
         }
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook"));
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/vehicle"));
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/valuations/{valuationId}/review"));
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/verifications/{kind}"));
         var schemas = document.path("components").path("schemas");
+        assertTrue(schemas.path("ValuationRequest").path("properties").has("forcedSaleValue"));
+        assertTrue(schemas.path("Readiness").path("properties").has("maximumSecuredAmount"));
         assertTrue(schemas.path("CreateLoanProductRequest").path("properties").has("originationProfileCode"));
         var selector = schemas.path("SelectOfferRequest");
         assertEquals(2, selector.path("oneOf").size());
@@ -75,8 +82,9 @@ class OriginationOpenApiTest {
     })
     @Import({OpenApiConfig.class, ProductOriginationController.class, FineractLoanProductController.class,
             ApplicationController.class, ApplicationVariableController.class, OriginationProfileController.class,
-            OriginationDefaultController.class})
+            OriginationDefaultController.class, LogbookController.class})
     static class Config {
+        @Bean LogbookService logbook() { return mock(LogbookService.class); }
         @Bean LoanProductCatalogService catalog() { return mock(LoanProductCatalogService.class); }
         @Bean ProductOriginationService productProfiles() { return mock(ProductOriginationService.class); }
         @Bean ApplicationService applications() { return mock(ApplicationService.class); }

@@ -20,6 +20,9 @@ public interface LoanRequestApplicationRepository extends JpaRepository<LoanRequ
             @org.springframework.data.repository.query.Param("mappingId") String mappingId,
             @org.springframework.data.repository.query.Param("remoteId") String remoteId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    Optional<LoanRequestApplication> findForLogbookUpdateByTenantIdAndId(String tenantId, String id);
+
     List<LoanRequestApplication> findAllByTenantIdOrderByCreatedAtDesc(String tenantId);
 
     Page<LoanRequestApplication> findAllByTenantId(String tenantId, Pageable pageable);

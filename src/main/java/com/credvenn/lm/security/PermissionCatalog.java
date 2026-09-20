@@ -5,6 +5,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public enum PermissionCatalog {
+    LOGBOOK_VIEW("LOGBOOK_VIEW", "View vehicle, valuation and security evidence"),
+    LOGBOOK_VEHICLE_MANAGE("LOGBOOK_VEHICLE_MANAGE", "Capture and replace application vehicles"),
+    LOGBOOK_VALUATION_SUBMIT("LOGBOOK_VALUATION_SUBMIT", "Submit vehicle valuations"),
+    LOGBOOK_VALUATION_REVIEW("LOGBOOK_VALUATION_REVIEW", "Independently review vehicle valuations"),
+    LOGBOOK_VERIFICATION_MANAGE("LOGBOOK_VERIFICATION_MANAGE", "Verify vehicle ownership, insurance and security registration"),
     ORIGINATION_PROFILE_VIEW("ORIGINATION_PROFILE_VIEW", "View tenant origination profiles"),
     ORIGINATION_PROFILE_CREATE("ORIGINATION_PROFILE_CREATE", "Create tenant origination profiles"),
     ORIGINATION_PROFILE_UPDATE("ORIGINATION_PROFILE_UPDATE", "Update profiles and tenant origination default"),
