@@ -106,9 +106,15 @@ public class ApplicationController {
         return ResponseEntity.ok(applicationService.captureConsent(actor.tenantId(), applicationId, actor.username(), request));
     }
 
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "Application with selected local mapping ID", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = ApplicationDtos.LoanRequestApplicationResponse.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Invalid selectors, unmet prerequisites, ineligible product, missing application profile or a prohibited product change", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.credvenn.lm.common.exception.ApiError.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Missing LOAN_CREATE permission", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.credvenn.lm.common.exception.ApiError.class))),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Application not found in the authenticated tenant", content = @io.swagger.v3.oas.annotations.media.Content(schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = com.credvenn.lm.common.exception.ApiError.class)))
+    })
     @PostMapping("/{applicationId}/offers/select")
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
-    @Operation(summary = "Select an eligible loan product offer")
+    @Operation(summary = "Select an eligible loan product offer by product code", description = "Requires LOAN_CREATE. Supply exactly one of productCode (preferred) or deprecated fineractProductId. Checks KYC/client/statement readiness, tenant, saved application profile, active product and inclusive amount limits. Saves the local mapping ID and resolves the remote ID internally. A different product cannot replace calculated financing.")
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> selectOffer(
             @PathVariable String applicationId,
             @Valid @RequestBody ApplicationDtos.SelectOfferRequest request) {
@@ -118,7 +124,7 @@ public class ApplicationController {
 
     @GetMapping("/{applicationId}/eligible-products")
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
-    @Operation(summary = "List Mini-LOS filtered eligible Fineract products with offer-readiness prerequisites")
+    @Operation(summary = "List eligible products for the application profile", description = "Requires LOAN_VIEW. Returns readiness checks and active same-tenant/profile products within the requested amount bounds. Products include productCode, loanProductMappingId and originationProfileId. An unready application returns an empty products list.")
     public ResponseEntity<ApplicationDtos.EligibleProductsResponse> eligibleProducts(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(applicationService.getEligibleProducts(actor.tenantId(), applicationId));
@@ -126,7 +132,7 @@ public class ApplicationController {
 
     @GetMapping("/{applicationId}/active-loan-products")
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
-    @Operation(summary = "List all active Fineract products for manual approval")
+    @Operation(summary = "List active products for the application origination profile", description = "Requires LOAN_VIEW. Uses the saved application profile, not the current tenant default. This manual catalog does not filter by amount or readiness; offer selection still enforces those checks.")
     public ResponseEntity<List<FineractDtos.LoanProductResponse>> activeProducts(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(applicationService.getAllActiveProducts(actor.tenantId(), applicationId));

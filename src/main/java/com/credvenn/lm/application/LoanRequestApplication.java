@@ -33,6 +33,9 @@ public class LoanRequestApplication extends AuditableEntity {
     @Column(name = "origination_profile_id", length = 36)
     private String originationProfileId;
 
+    @Column(name = "selected_loan_product_mapping_id", length = 36)
+    private String selectedLoanProductMappingId;
+
     @Column(name = "applicant_first_name", nullable = false)
     private String applicantFirstName;
 
@@ -168,6 +171,8 @@ public class LoanRequestApplication extends AuditableEntity {
 
     public String getId() { return id; }
     public long getVersion() { return version; }
+    public String getSelectedLoanProductMappingId() { return selectedLoanProductMappingId; }
+    public void setSelectedLoanProductMappingId(String value) { selectedLoanProductMappingId = value; }
     public String getOriginationProfileId() { return originationProfileId; }
     public void setOriginationProfileId(String originationProfileId) { this.originationProfileId = originationProfileId; }
     public String getTenantId() { return tenantId; }

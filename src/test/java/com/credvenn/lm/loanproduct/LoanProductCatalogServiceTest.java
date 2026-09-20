@@ -32,7 +32,7 @@ class LoanProductCatalogServiceTest {
         LoanProductMapping existing = existingMapping();
         when(context.currentActorService.requireCurrentUser()).thenReturn(
                 new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
-        when(context.loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase("tenant-1", "PH12"))
+        when(context.loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase("tenant-1", "PH12"))
                 .thenReturn(Optional.of(existing));
         when(context.tenantService.getRequiredTenant("tenant-1")).thenReturn(new Tenant());
         when(context.loanProductMappingRepository.save(any(LoanProductMapping.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -106,7 +106,7 @@ class LoanProductCatalogServiceTest {
         LoanProductMapping existing = existingMapping();
         when(context.currentActorService.requireCurrentUser()).thenReturn(
                 new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
-        when(context.loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase("tenant-1", "PH12"))
+        when(context.loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase("tenant-1", "PH12"))
                 .thenReturn(Optional.of(existing));
         when(context.loanProductMappingRepository.save(any(LoanProductMapping.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -125,7 +125,7 @@ class LoanProductCatalogServiceTest {
         LoanProductMapping existing = inactiveMapping();
         when(context.currentActorService.requireCurrentUser()).thenReturn(
                 new AuthenticatedUser("user-1", "tenant-1", "tester", "tester@example.com", List.of(), List.of()));
-        when(context.loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase("tenant-1", "PH8"))
+        when(context.loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase("tenant-1", "PH8"))
                 .thenReturn(Optional.of(existing));
 
         context.service.deleteCurrentTenantProductByShortName("PH8");
@@ -182,6 +182,6 @@ class LoanProductCatalogServiceTest {
                 glAccountTemplateRepository,
                 currentActorService,
                 tenantService,
-                fineractGateway);
+                fineractGateway, mock(ProductOriginationService.class));
     }
 }

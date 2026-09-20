@@ -25,7 +25,7 @@ public class ApplicationVariableController {
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('LOAN_CREATE','APPLICATION_VARIABLE_MANAGE')")
-    @Operation(summary = "Get the tenant application questionnaire", description = "Returns shared and profile-specific questions in display order. Omitted profile code uses the tenant default.")
+    @Operation(summary = "Get the tenant application questionnaire", description = "Returns shared and profile-specific questions in display order. Omitted profile code uses the active tenant default. A missing default or unsupported/inactive profile is rejected. Requires LOAN_CREATE or APPLICATION_VARIABLE_MANAGE.")
     public ResponseEntity<List<ApplicationVariableDtos.DefinitionResponse>> list(
             @Parameter(description = "Exclude inactive questions") @RequestParam(defaultValue = "true") boolean activeOnly,
             @RequestParam(required = false) String originationProfileCode) {
@@ -34,7 +34,7 @@ public class ApplicationVariableController {
 
     @GetMapping("/all")
     @PreAuthorize("hasAuthority('APPLICATION_VARIABLE_MANAGE')")
-    @Operation(summary = "List definitions for administration", description = "All profiles and shared questions, including drafts. Optional profile code filters to that profile plus shared questions.")
+    @Operation(summary = "List definitions for administration", description = "Requires APPLICATION_VARIABLE_MANAGE. All profiles and shared questions, including drafts. Optional profile code filters to that profile plus shared questions. Does not require or use a tenant default.")
     public ResponseEntity<List<ApplicationVariableDtos.DefinitionResponse>> listAll(
             @RequestParam(defaultValue = "false") boolean activeOnly,
             @RequestParam(required = false) String originationProfileCode) {
@@ -51,7 +51,7 @@ public class ApplicationVariableController {
 
     @PutMapping("/{definitionId}")
     @PreAuthorize("hasAuthority('APPLICATION_VARIABLE_MANAGE')")
-    @Operation(summary = "Update an application question", description = "The stable question code cannot change. Updating increments the definition version; submitted answers retain snapshots.")
+    @Operation(summary = "Update an application question", description = "The stable question code cannot change. Updating increments the definition version; submitted answers retain snapshots. PUT replaces scope: omitted/null originationProfileCode makes the question shared; retain the code to keep a profile-specific question.")
     public ResponseEntity<ApplicationVariableDtos.DefinitionResponse> update(@PathVariable String definitionId,
             @Valid @RequestBody ApplicationVariableDtos.DefinitionRequest request) {
         return ResponseEntity.ok(service.update(currentActorService.requireCurrentUser().tenantId(), definitionId, request));

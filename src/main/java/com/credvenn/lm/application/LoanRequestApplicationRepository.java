@@ -10,6 +10,16 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface LoanRequestApplicationRepository extends JpaRepository<LoanRequestApplication, String> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+    @org.springframework.data.jpa.repository.Query("""
+            select a from LoanRequestApplication a where a.tenantId = :tenantId
+            and (a.selectedLoanProductMappingId = :mappingId or trim(a.selectedFineractProductId) = :remoteId
+                 or trim(a.approvedFineractProductId) = :remoteId)
+            """)
+    List<LoanRequestApplication> findProductReferencesForUpdate(@org.springframework.data.repository.query.Param("tenantId") String tenantId,
+            @org.springframework.data.repository.query.Param("mappingId") String mappingId,
+            @org.springframework.data.repository.query.Param("remoteId") String remoteId);
+
     List<LoanRequestApplication> findAllByTenantIdOrderByCreatedAtDesc(String tenantId);
 
     Page<LoanRequestApplication> findAllByTenantId(String tenantId, Pageable pageable);

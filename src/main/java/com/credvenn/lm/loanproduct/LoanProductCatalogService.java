@@ -44,18 +44,20 @@ public class LoanProductCatalogService {
     private final CurrentActorService currentActorService;
     private final TenantService tenantService;
     private final FineractGateway fineractGateway;
+    private final ProductOriginationService origination;
 
     public LoanProductCatalogService(
             LoanProductMappingRepository loanProductMappingRepository,
             GlAccountTemplateRepository glAccountTemplateRepository,
             CurrentActorService currentActorService,
             TenantService tenantService,
-            FineractGateway fineractGateway) {
+            FineractGateway fineractGateway, ProductOriginationService origination) {
         this.loanProductMappingRepository = loanProductMappingRepository;
         this.glAccountTemplateRepository = glAccountTemplateRepository;
         this.currentActorService = currentActorService;
         this.tenantService = tenantService;
         this.fineractGateway = fineractGateway;
+        this.origination = origination;
     }
 
     @Transactional
@@ -63,6 +65,7 @@ public class LoanProductCatalogService {
         validateRequest(request);
         var actor = currentActorService.requireCurrentUser();
         String tenantId = actor.tenantId();
+        String profileId = origination.resolveProfile(tenantId, request.originationProfileCode());
         String normalizedProductCode = normalize(request.productCode());
         if (loanProductMappingRepository.existsByTenantIdAndProductCodeIgnoreCase(tenantId, normalizedProductCode)) {
             throw new ConflictException("Loan product code already exists for this tenant");
@@ -99,6 +102,7 @@ public class LoanProductCatalogService {
 
         LoanProductMapping mapping = new LoanProductMapping();
         mapping.setTenantId(tenantId);
+        mapping.setOriginationProfileId(profileId);
         mapping.setProductCode(normalizedProductCode);
         mapping.setDisplayName(request.displayName().trim());
         mapping.setShortName(request.shortName().trim().toUpperCase());
@@ -141,7 +145,7 @@ public class LoanProductCatalogService {
             LoanProductCatalogDtos.UpdateLoanProductRequest request) {
         var actor = currentActorService.requireCurrentUser();
         String tenantId = actor.tenantId();
-        LoanProductMapping mapping = loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
+        LoanProductMapping mapping = loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
                 .orElseThrow(() -> new NotFoundException("Loan product not found"));
 
         ResolvedLoanProductUpdate resolved = resolveUpdate(mapping, request);
@@ -210,10 +214,23 @@ public class LoanProductCatalogService {
             String sortBy,
             String sortDir,
             boolean includeInactive) {
+        return listCurrentTenantLoanProducts(page, size, sortBy, sortDir, includeInactive, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<FineractDtos.LoanProductResponse> listCurrentTenantLoanProducts(
+            Integer page, Integer size, String sortBy, String sortDir, boolean includeInactive, String originationProfileCode) {
         String tenantId = currentActorService.requireCurrentUser().tenantId();
         var pageable = PaginationSupport.pageable(page, size, sortBy, sortDir, LOAN_PRODUCT_SORTS, "name");
         String normalizedSortBy = PaginationSupport.normalizeSortBy(sortBy, LOAN_PRODUCT_SORTS, "name");
         String normalizedSortDir = PaginationSupport.normalizeDirectionValue(sortDir);
+        if (originationProfileCode != null) {
+            String profileId = origination.resolveProfile(tenantId, originationProfileCode);
+            var scoped = (includeInactive ? loanProductMappingRepository.findAllByTenantIdAndOriginationProfileId(tenantId, profileId, pageable)
+                    : loanProductMappingRepository.findAllByTenantIdAndOriginationProfileIdAndActiveTrue(tenantId, profileId, pageable))
+                    .map(FineractDtos.LoanProductResponse::from);
+            return PagedResponse.fromPage(scoped, normalizedSortBy, normalizedSortDir);
+        }
         var resultPage = (includeInactive
                 ? loanProductMappingRepository.findAllByTenantId(tenantId, pageable)
                 : loanProductMappingRepository.findAllByTenantIdAndActiveTrue(tenantId, pageable))
@@ -225,7 +242,7 @@ public class LoanProductCatalogService {
     public LoanProductCatalogDtos.LoanProductCatalogResponse deactivateCurrentTenantProductByShortName(String shortName) {
         var actor = currentActorService.requireCurrentUser();
         String tenantId = actor.tenantId();
-        LoanProductMapping mapping = loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
+        LoanProductMapping mapping = loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
                 .orElseThrow(() -> new NotFoundException("Loan product not found"));
 
         if (!mapping.isActive()) {
@@ -241,13 +258,14 @@ public class LoanProductCatalogService {
     @Transactional
     public void deleteCurrentTenantProductByShortName(String shortName) {
         String tenantId = currentActorService.requireCurrentUser().tenantId();
-        LoanProductMapping mapping = loanProductMappingRepository.findByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
+        LoanProductMapping mapping = loanProductMappingRepository.findForUpdateByTenantIdAndShortNameIgnoreCase(tenantId, shortName)
                 .orElseThrow(() -> new NotFoundException("Loan product not found"));
 
         if (mapping.isActive()) {
             throw new BadRequestException("Deactivate the loan product before deleting it");
         }
 
+        origination.assertCanDelete(mapping);
         loanProductMappingRepository.delete(mapping);
     }
 

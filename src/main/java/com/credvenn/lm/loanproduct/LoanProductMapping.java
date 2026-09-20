@@ -20,6 +20,9 @@ public class LoanProductMapping extends AuditableEntity {
     @Column(name = "tenant_id", nullable = false, length = 36)
     private String tenantId;
 
+    @Column(name = "origination_profile_id", length = 36)
+    private String originationProfileId;
+
     @Column(name = "product_code", nullable = false, length = 100)
     private String productCode;
 
@@ -96,6 +99,8 @@ public class LoanProductMapping extends AuditableEntity {
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public void setTenantId(String tenantId) { this.tenantId = tenantId; }
+    public String getOriginationProfileId() { return originationProfileId; }
+    public void setOriginationProfileId(String value) { originationProfileId = value; }
     public String getProductCode() { return productCode; }
     public void setProductCode(String productCode) { this.productCode = productCode; }
     public String getDisplayName() { return displayName; }

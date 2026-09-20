@@ -72,7 +72,7 @@ WHERE tenant_id = :tenantId AND changed_by = 'migration:V38'
 ORDER BY created_at;
 ```
 
-This change is a one-time data migration. Application creation now resolves and saves its profile reference. Product creation still omits the product profile reference and needs its later service integration. Records created by older application instances after V38, and products created before product integration, may still need a follow-up catch-up backfill before these fields become mandatory. Requirements JSON still does not execute the application workflow.
+This change is a one-time data migration. Application creation now resolves and saves its profile reference. Product creation now also resolves its profile, and offer selection records the local product mapping. See [product origination](product-origination.md). Records created by older application instances after V38, and products created before product integration, may still need a follow-up catch-up backfill before these fields become mandatory. Requirements JSON still does not execute the application workflow.
 
 ## Tests
 

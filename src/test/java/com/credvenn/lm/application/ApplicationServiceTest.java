@@ -392,7 +392,7 @@ class ApplicationServiceTest {
                 applicationEventPublisher,
                 subscriptionGuardService,
                 subscriptionBillingService,
-                applicationVariableService, profiles);
+                applicationVariableService, profiles, mock(jakarta.persistence.EntityManager.class));
 
         private TestContext() {
             when(profiles.resolveForApplication("tenant-1", null)).thenReturn("profile-1");

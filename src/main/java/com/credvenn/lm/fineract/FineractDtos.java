@@ -15,7 +15,7 @@ public final class FineractDtos {
 
     @Schema(name = "LoanProductResponse")
     public record LoanProductResponse(
-            String id,
+            @Schema(deprecated = true, description = "Legacy Fineract ID; select offers using productCode") String id,
             String productCode,
             String name,
             String shortName,
@@ -33,7 +33,7 @@ public final class FineractDtos {
             Integer repaymentEvery,
             Integer repaymentFrequencyType,
             Integer numberOfRepayments,
-            String currencyCode) {
+            String currencyCode, String loanProductMappingId, String originationProfileId) {
 
         public static LoanProductResponse from(FineractLoanProduct product) {
             return new LoanProductResponse(
@@ -55,7 +55,7 @@ public final class FineractDtos {
                     product.repaymentEvery(),
                     product.repaymentFrequencyType(),
                     product.numberOfRepayments(),
-                    product.currencyCode());
+                    product.currencyCode(), null, null);
         }
 
         public static LoanProductResponse from(LoanProductMapping mapping) {
@@ -78,7 +78,7 @@ public final class FineractDtos {
                     mapping.getRepaymentEvery(),
                     repaymentFrequencyTypeId(mapping.getRepaymentFrequency()),
                     mapping.getNumberOfRepayments(),
-                    mapping.getCurrencyCode());
+                    mapping.getCurrencyCode(), mapping.getId(), mapping.getOriginationProfileId());
         }
 
         private static Integer interestTypeId(String value) {

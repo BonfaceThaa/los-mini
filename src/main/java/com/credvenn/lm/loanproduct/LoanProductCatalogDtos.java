@@ -14,7 +14,25 @@ public final class LoanProductCatalogDtos {
     private LoanProductCatalogDtos() {
     }
 
-    @Schema(name = "CreateLoanProductRequest")
+    public static final String LOGBOOK_EXAMPLE = """
+            {
+              "productCode": "LOGBOOK_12_MONTHS",
+              "displayName": "Logbook Loan - 12 Months",
+              "shortName": "LB12",
+              "description": "Cash loan secured by a motor vehicle",
+              "currencyCode": "KES",
+              "principal": {"min": 50000, "defaultAmount": 300000, "max": 2000000},
+              "term": {"numberOfRepayments": 12, "repaymentEvery": 1, "repaymentFrequency": "MONTHS"},
+              "interest": {"ratePerPeriod": 2.0, "interestType": "DECLINING_BALANCE",
+                           "calculationPeriodType": "SAME_AS_REPAYMENT_PERIOD", "rateFrequency": "MONTHS"},
+              "amortizationType": "EQUAL_INSTALLMENTS",
+              "accountingTemplateCode": "STANDARD",
+              "active": false,
+              "originationProfileCode": "LOGBOOK"
+            }
+            """;
+
+    @Schema(name = "CreateLoanProductRequest", description = "Tenant product configuration. Profile code omitted/null uses the active tenant default; an explicit code may target a draft profile. Example terms are illustrative, not a prescribed lending policy.", example = LOGBOOK_EXAMPLE)
     public record CreateLoanProductRequest(
             @NotBlank @Size(max = 100) String productCode,
             @NotBlank String displayName,
@@ -27,8 +45,11 @@ public final class LoanProductCatalogDtos {
             @NotBlank String amortizationType,
             String transactionProcessingStrategyCode,
             @NotBlank String accountingTemplateCode,
+            @Schema(description = "Optional: omit to resolve the tenant GL accounts by business purpose; if supplied, all nine IDs are required.")
             @Valid AccountingAccountsRequest accountingAccounts,
-            @NotNull Boolean active) {
+            @NotNull Boolean active,
+            @Schema(description = "Tenant-local profile code. Omitted/null uses the active tenant default. Draft profiles may be associated explicitly.", example = "LOGBOOK")
+            @Size(max = 100) String originationProfileCode) {
     }
 
     @Schema(name = "UpdateLoanProductRequest")
@@ -43,6 +64,7 @@ public final class LoanProductCatalogDtos {
             String amortizationType,
             String transactionProcessingStrategyCode,
             @Size(max = 100) String accountingTemplateCode,
+            @Schema(description = "Optional: omit to preserve existing accounting accounts; if supplied, all nine IDs are required.")
             @Valid AccountingAccountsRequest accountingAccounts,
             Boolean active) {
     }
@@ -113,10 +135,11 @@ public final class LoanProductCatalogDtos {
             String transactionProcessingStrategyCode,
             String accountingTemplateCode,
             AccountingAccountsRequest accountingAccounts,
-            String fineractProductId,
+            @Schema(deprecated = true, description = "Legacy remote identifier. New clients select offers using productCode.") String fineractProductId,
             boolean active,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            @Schema(description = "Resolved local origination profile ID") String originationProfileId) {
 
         public static LoanProductCatalogResponse from(LoanProductMapping mapping) {
             return new LoanProductCatalogResponse(
@@ -147,7 +170,7 @@ public final class LoanProductCatalogDtos {
                     String.valueOf(mapping.getFineractProductId()),
                     mapping.isActive(),
                     mapping.getCreatedAt(),
-                    mapping.getUpdatedAt());
+                    mapping.getUpdatedAt(), mapping.getOriginationProfileId());
         }
     }
 }

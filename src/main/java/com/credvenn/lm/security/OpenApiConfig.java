@@ -14,7 +14,7 @@ public class OpenApiConfig {
     @Bean
     OpenAPI openAPI() {
         return new OpenAPI()
-                .info(new Info().title("Mini-LOS Auth API").version("v1").description("Tenant-aware authentication and RBAC APIs"))
+                .info(new Info().title("Mini-LOS API").version("v1").description("Tenant-aware loan origination, profiles, product catalog, questionnaires, authentication and RBAC APIs"))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
                         .name("bearerAuth")

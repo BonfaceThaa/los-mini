@@ -49,6 +49,7 @@ class PhoneOriginationBaselineTest {
     @Mock SubscriptionBillingService billing;
     @Mock ApplicationVariableService variables;
     @Mock com.credvenn.lm.origination.OriginationProfileResolver profiles;
+    @Mock jakarta.persistence.EntityManager entityManager;
     @InjectMocks ApplicationService service;
 
     private LoanRequestApplication application;
@@ -59,6 +60,7 @@ class PhoneOriginationBaselineTest {
         application = new LoanRequestApplication();
         ReflectionTestUtils.setField(application, "id", "app-1");
         application.setTenantId("tenant-1");
+        application.setOriginationProfileId("profile-1");
         application.setRequestedAmount(new BigDecimal("20000"));
         application.setStatus(ApplicationStatus.STATEMENT_VERIFIED);
         application.setFineractClientId("client-1");
@@ -87,6 +89,8 @@ class PhoneOriginationBaselineTest {
         LoanProductMapping product = new LoanProductMapping();
         product.setTenantId("tenant-1");
         product.setProductCode("PHONE_STANDARD");
+        product.setOriginationProfileId("profile-1");
+        ReflectionTestUtils.setField(product, "id", "mapping-7");
         product.setFineractProductId(7L);
         product.setDisplayName("Phone standard");
         product.setPrincipalMin(new BigDecimal("10000"));
@@ -107,7 +111,7 @@ class PhoneOriginationBaselineTest {
             boolean clientExists, boolean expectedReady) {
         if (!clientExists) application.setFineractClientId(null);
         readiness(status, statementPassed);
-        if (expectedReady) when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        if (expectedReady) when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         var response = service.getEligibleProducts("tenant-1", "app-1");
         assertEquals(expectedReady, response.offersReady());
@@ -120,7 +124,7 @@ class PhoneOriginationBaselineTest {
     void disabledStatementAnalysisAllowsOffersWithoutStatementRecords() {
         tenant.setStatementAnalysisMode(TenantStatementAnalysisMode.DISABLED);
         readiness(KycStatus.PASSED, false);
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         assertTrue(service.getEligibleProducts("tenant-1", "app-1").offersReady());
         verifyNoInteractions(analyses, reviews);
@@ -145,7 +149,7 @@ class PhoneOriginationBaselineTest {
     void productAmountLimitsAreInclusive(String amount, int expectedCount) {
         application.setRequestedAmount(new BigDecimal(amount));
         readiness(KycStatus.PASSED, true);
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         assertEquals(expectedCount, service.getEligibleProducts("tenant-1", "app-1").products().size());
     }
@@ -153,10 +157,11 @@ class PhoneOriginationBaselineTest {
     @Test
     void selectingEligibleOfferRecordsSelectionAndHistoryWithoutCreatingLoan() {
         readiness(KycStatus.PASSED, true);
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
+        when(products.findForUpdateByTenantIdAndId("tenant-1", "mapping-7")).thenReturn(Optional.of(product()));
         var response = service.selectOffer("tenant-1", "app-1", "officer",
-                new ApplicationDtos.SelectOfferRequest("7"));
+                new ApplicationDtos.SelectOfferRequest(null, "7"));
         assertEquals("7", response.selectedFineractProductId());
         assertEquals(ApplicationStatus.OFFER_SELECTED, response.status());
         assertNotNull(application.getSelectedOfferAt());
@@ -170,10 +175,10 @@ class PhoneOriginationBaselineTest {
     @Test
     void selectingProductOutsideEligibleCatalogDoesNotMutateApplication() {
         readiness(KycStatus.PASSED, true);
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         assertThrows(BadRequestException.class, () -> service.selectOffer("tenant-1", "app-1", "officer",
-                new ApplicationDtos.SelectOfferRequest("99")));
+                new ApplicationDtos.SelectOfferRequest(null, "99")));
         assertNull(application.getSelectedFineractProductId());
         assertEquals(ApplicationStatus.STATEMENT_VERIFIED, application.getStatus());
         verifyNoInteractions(history, fineract);
@@ -182,7 +187,7 @@ class PhoneOriginationBaselineTest {
     @Test
     void otherTenantCannotLoadApplicationForOfferSelection() {
         assertThrows(NotFoundException.class, () -> service.selectOffer("tenant-2", "app-1", "officer",
-                new ApplicationDtos.SelectOfferRequest("7")));
+                new ApplicationDtos.SelectOfferRequest(null, "7")));
         verify(applications).findByIdAndTenantId("app-1", "tenant-2");
         verifyNoInteractions(products, fineract, history);
     }
@@ -192,7 +197,7 @@ class PhoneOriginationBaselineTest {
     void deviceAssignmentComputesPhonePrincipalAndRepayments(DepositType depositType, String depositValue) {
         loadApplication();
         application.setSelectedFineractProductId("7");
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         InventoryDevice device = new InventoryDevice();
         ReflectionTestUtils.setField(device, "id", "device-1");
@@ -233,7 +238,7 @@ class PhoneOriginationBaselineTest {
         application.setApprovedTermMonths(4);
         application.setApprovedFineractProductId("7");
         when(assignments.findByApplicationId("app-1")).thenReturn(Optional.of(new InventoryDeviceAssignment()));
-        when(products.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc("tenant-1"))
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
                 .thenReturn(List.of(product()));
         when(tenants.getRequiredTenant("tenant-1")).thenReturn(tenant);
         when(fineract.createPendingLoan(eq(tenant), eq(application), any(),
@@ -252,7 +257,7 @@ class PhoneOriginationBaselineTest {
     void offerSelectionCannotBypassReadiness() {
         readiness(KycStatus.FAILED, true);
         assertThrows(BadRequestException.class, () -> service.selectOffer("tenant-1", "app-1", "officer",
-                new ApplicationDtos.SelectOfferRequest("7")));
+                new ApplicationDtos.SelectOfferRequest(null, "7")));
         assertNull(application.getSelectedFineractProductId());
         verifyNoInteractions(products, history, fineract);
     }
@@ -287,5 +292,79 @@ class PhoneOriginationBaselineTest {
         assertThrows(BadRequestException.class, () -> service.create("tenant-1", "officer", request));
         verifyNoInteractions(applications, history, events, clients, fineract, otps);
         verify(variables, never()).savePrepared(anyString(), anyString(), anyList());
+    }
+    @Test
+    void selectingByProductCodePersistsLocalMappingAndOffersExposeCode() {
+        readiness(KycStatus.PASSED, true);
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
+                .thenReturn(List.of(product()));
+        when(products.findForUpdateByTenantIdAndId("tenant-1", "mapping-7")).thenReturn(Optional.of(product()));
+        var offered = service.getEligibleProducts("tenant-1", "app-1").products().getFirst();
+        assertEquals("PHONE_STANDARD", offered.productCode());
+        assertEquals("mapping-7", offered.loanProductMappingId());
+        assertEquals("profile-1", offered.originationProfileId());
+        var response = service.selectOffer("tenant-1", "app-1", "officer", new ApplicationDtos.SelectOfferRequest(" phone_standard "));
+        assertEquals("mapping-7", response.selectedLoanProductMappingId());
+        assertEquals("7", response.selectedFineractProductId());
+        verifyNoInteractions(fineract);
+    }
+
+    @Test
+    void selectionRejectsMissingBlankOrAmbiguousSelectors() {
+        loadApplication();
+        for (var request : List.of(new ApplicationDtos.SelectOfferRequest(null, null),
+                new ApplicationDtos.SelectOfferRequest("PHONE_STANDARD", "7"),
+                new ApplicationDtos.SelectOfferRequest(" "), new ApplicationDtos.SelectOfferRequest(null, " "))) {
+            assertThrows(BadRequestException.class, () -> service.selectOffer("tenant-1", "app-1", "officer", request));
+        }
+        verifyNoInteractions(products, history, fineract);
+        assertNull(application.getSelectedLoanProductMappingId());
+    }
+
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings = {"inactive", "profile", "amount"})
+    void selectionRechecksCurrentProductAfterLocking(String change) {
+        readiness(KycStatus.PASSED, true);
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
+                .thenReturn(List.of(product()));
+        var changed = product();
+        if (change.equals("inactive")) changed.setActive(false);
+        if (change.equals("profile")) changed.setOriginationProfileId("logbook-profile");
+        if (change.equals("amount")) changed.setPrincipalMax(BigDecimal.ONE);
+        when(products.findForUpdateByTenantIdAndId("tenant-1", "mapping-7")).thenReturn(Optional.of(changed));
+        assertThrows(BadRequestException.class, () -> service.selectOffer("tenant-1", "app-1", "officer",
+                new ApplicationDtos.SelectOfferRequest("PHONE_STANDARD")));
+        assertNull(application.getSelectedLoanProductMappingId()); verifyNoInteractions(history, fineract);
+    }
+
+    @Test
+    void missingApplicationProfileCannotUseTenantWideCatalog() {
+        loadApplication(); application.setOriginationProfileId(null);
+        assertThrows(BadRequestException.class, () -> service.getAllActiveProducts("tenant-1", "app-1"));
+        verifyNoInteractions(products);
+    }
+
+    @Test
+    void applicationCatalogUsesSavedProfileEvenIfDefaultChanges() {
+        loadApplication(); tenant.setDefaultOriginationProfileId("different-profile");
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
+                .thenReturn(List.of(product()));
+        assertEquals("PHONE_STANDARD", service.getAllActiveProducts("tenant-1", "app-1").getFirst().productCode());
+        verify(products, never()).findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc(anyString());
+    }
+    @Test
+    void reselectingSamePricedOfferPreservesStatusAndChangingItIsRejected() {
+        readiness(KycStatus.PASSED, true);
+        application.setApprovedAmount(new BigDecimal("20000")); application.setSelectedFineractProductId("7");
+        application.setStatus(ApplicationStatus.DEVICE_ASSIGNED);
+        when(products.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc("tenant-1", "profile-1"))
+                .thenReturn(List.of(product()));
+        when(products.findForUpdateByTenantIdAndId("tenant-1", "mapping-7")).thenReturn(Optional.of(product()));
+        var response = service.selectOffer("tenant-1", "app-1", "officer", new ApplicationDtos.SelectOfferRequest("PHONE_STANDARD"));
+        assertEquals(ApplicationStatus.DEVICE_ASSIGNED, response.status());
+        assertEquals("mapping-7", response.selectedLoanProductMappingId());
+        application.setSelectedFineractProductId("8");
+        assertThrows(BadRequestException.class, () -> service.selectOffer("tenant-1", "app-1", "officer",
+                new ApplicationDtos.SelectOfferRequest("PHONE_STANDARD")));
+        verify(history, never()).save(any());
     }
 }

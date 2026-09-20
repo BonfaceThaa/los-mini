@@ -57,9 +57,19 @@ public final class ApplicationDtos {
             @NotBlank @Size(max = 100) String consentTextVersion) {
     }
 
-    @Schema(name = "SelectOfferRequest")
-    public record SelectOfferRequest(@NotBlank String fineractProductId) {
+    @Schema(name = "SelectOfferRequest", description = "Supply exactly one nonblank selector: productCode (preferred) or deprecated fineractProductId. Both paths use identical eligibility checks.",
+            oneOf = {ProductCodeSelection.class, LegacyProductSelection.class})
+    public record SelectOfferRequest(
+            @Schema(example = "LOGBOOK_12_MONTHS", description = "Tenant-local code returned by eligible-products; preferred selector") @Size(max = 100) String productCode,
+            @Schema(deprecated = true, description = "Legacy input; send productCode instead. Supply exactly one selector.")
+            @Size(max = 100) String fineractProductId) {
+        public SelectOfferRequest(String productCode) { this(productCode, null); }
     }
+
+    @Schema(name = "SelectOfferByProductCode")
+    public record ProductCodeSelection(@NotBlank @Size(max = 100) String productCode) {}
+    @Schema(name = "SelectOfferByLegacyId", deprecated = true)
+    public record LegacyProductSelection(@NotBlank @Size(max = 100) String fineractProductId) {}
 
     @Schema(name = "InternalApprovalRequest")
     public record InternalApprovalRequest(@NotBlank @Size(max = 1000) String reason) {
@@ -162,6 +172,7 @@ public final class ApplicationDtos {
             List<ApplicationStatusHistoryResponse> statusHistory,
             @ArraySchema(schema = @Schema(implementation = ApplicationVariableDtos.AnswerResponse.class))
             List<ApplicationVariableDtos.AnswerResponse> applicationVariables,
-            @Schema(description = "Stored origination profile ID; may be null on records awaiting backfill") String originationProfileId) {
+            @Schema(description = "Stored origination profile ID; may be null on records awaiting backfill") String originationProfileId,
+            @Schema(description = "Selected local product-mapping ID; nullable before selection or historical reconciliation") String selectedLoanProductMappingId) {
     }
 }

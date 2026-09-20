@@ -79,6 +79,7 @@ public class ApplicationService {
     private final SubscriptionBillingService subscriptionBillingService;
     private final ApplicationVariableService applicationVariableService;
     private final OriginationProfileResolver originationProfileResolver;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
@@ -97,7 +98,7 @@ public class ApplicationService {
             SubscriptionGuardService subscriptionGuardService,
             SubscriptionBillingService subscriptionBillingService,
             ApplicationVariableService applicationVariableService,
-            OriginationProfileResolver originationProfileResolver) {
+            OriginationProfileResolver originationProfileResolver, jakarta.persistence.EntityManager entityManager) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
         this.kycCheckRepository = kycCheckRepository;
@@ -115,6 +116,7 @@ public class ApplicationService {
         this.subscriptionBillingService = subscriptionBillingService;
         this.applicationVariableService = applicationVariableService;
         this.originationProfileResolver = originationProfileResolver;
+        this.entityManager = entityManager;
     }
 
     @Transactional
@@ -240,11 +242,28 @@ public class ApplicationService {
             ApplicationDtos.SelectOfferRequest request) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
-            List<FineractLoanProduct> eligibleProducts = getEligibleProductsInternal(application);
-            FineractLoanProduct product = eligibleProducts.stream()
-                    .filter(item -> item.id().equals(request.fineractProductId()))
-                    .findFirst()
-                    .orElseThrow(() -> new BadRequestException("Selected product is not in the eligible list"));
+            if ((request.productCode() == null) == (request.fineractProductId() == null))
+                throw new BadRequestException("Supply exactly one of productCode or legacy fineractProductId");
+            String selector = request.productCode() != null ? request.productCode().trim() : request.fineractProductId().trim();
+            if (selector.isEmpty()) throw new BadRequestException("Product selector must not be blank");
+            LoanProductMapping candidate = getEligibleProductsInternal(application).stream()
+                    .filter(item -> request.productCode() != null ? item.getProductCode().equalsIgnoreCase(selector)
+                            : String.valueOf(item.getFineractProductId()).equals(selector))
+                    .findFirst().orElseThrow(() -> new BadRequestException("Selected product is not in the eligible list"));
+            // Serialize selection with local reassociation and product updates; recheck current state after locking.
+            LoanProductMapping mapping = loanProductMappingRepository.findForUpdateByTenantIdAndId(tenantId, candidate.getId())
+                    .orElseThrow(() -> new BadRequestException("Selected product is no longer available"));
+            entityManager.refresh(mapping, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            if (!mapping.isActive() || !application.getOriginationProfileId().equals(mapping.getOriginationProfileId())
+                    || !amountEligible(mapping, application.getRequestedAmount()))
+                throw new BadRequestException("Selected product is no longer eligible");
+            if ((application.getApprovedAmount() != null || application.isInternalApproved() || application.getFineractLoanId() != null)
+                    && !String.valueOf(mapping.getFineractProductId()).equals(application.getSelectedFineractProductId()))
+                throw new BadRequestException("Cannot change product after financing has been calculated");
+            FineractLoanProduct product = toLoanProduct(mapping);
+            application.setSelectedLoanProductMappingId(mapping.getId());
+            if (application.getApprovedAmount() != null || application.isInternalApproved() || application.getFineractLoanId() != null)
+                return get(tenantId, applicationId); // Same offer: preserve pricing, approval and workflow status.
             application.setSelectedFineractProductId(product.id());
             application.setSelectedFineractProductName(product.name());
             application.setSelectedOfferAt(Instant.now());
@@ -274,8 +293,7 @@ public class ApplicationService {
 
     @Transactional(readOnly = true)
     public List<FineractDtos.LoanProductResponse> getAllActiveProducts(String tenantId, String applicationId) {
-        getRequired(tenantId, applicationId);
-        return loanProductMappingRepository.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc(tenantId).stream()
+        return getActiveApplicationMappings(getRequired(tenantId, applicationId)).stream()
                 .map(FineractDtos.LoanProductResponse::from)
                 .toList();
     }
@@ -317,7 +335,7 @@ public class ApplicationService {
             if (productId == null || productId.isBlank()) {
                 throw new BadRequestException("A Fineract product must be selected before internal approval");
             }
-            FineractLoanProduct product = requireActiveProduct(tenantId, productId);
+            FineractLoanProduct product = requireActiveProduct(application, productId);
             application.setInternalApproved(true);
             application.setApprovedBy(actor);
             application.setApprovedAt(Instant.now());
@@ -504,7 +522,7 @@ public class ApplicationService {
             if (application.getSelectedFineractProductId() == null || application.getSelectedFineractProductId().isBlank()) {
                 throw new BadRequestException("A Fineract product must be selected before device assignment");
             }
-            FineractLoanProduct product = requireActiveProduct(tenantId, application.getSelectedFineractProductId());
+            FineractLoanProduct product = requireActiveProduct(application, application.getSelectedFineractProductId());
             Integer approvedTermMonths = resolveApprovedTermMonths(product);
             int repaymentCount = resolveRepaymentCount(product, approvedTermMonths);
             BigDecimal cashPrice = requiredPositive(device.getCashPrice(), "Assigned device cash price must be configured");
@@ -561,18 +579,28 @@ public class ApplicationService {
                 .orElseThrow(() -> new NotFoundException("Loan request application not found"));
     }
 
-    private List<FineractLoanProduct> getEligibleProductsInternal(LoanRequestApplication application) {
+    private List<LoanProductMapping> getEligibleProductsInternal(LoanRequestApplication application) {
         if (!assessOfferReadiness(application).offersReady()) {
             return List.of();
         }
         return getEligibleProductsByAmount(application);
     }
 
-    private List<FineractLoanProduct> getEligibleProductsByAmount(LoanRequestApplication application) {
-        return getActiveTenantProducts(application.getTenantId()).stream()
-                .filter(product -> product.maxPrincipal() == null || product.maxPrincipal().compareTo(application.getRequestedAmount()) >= 0)
-                .filter(product -> product.minPrincipal() == null || product.minPrincipal().compareTo(application.getRequestedAmount()) <= 0)
-                .toList();
+    private List<LoanProductMapping> getEligibleProductsByAmount(LoanRequestApplication application) {
+        return getActiveApplicationMappings(application).stream()
+                .filter(product -> amountEligible(product, application.getRequestedAmount())).toList();
+    }
+
+    private boolean amountEligible(LoanProductMapping product, BigDecimal amount) {
+        return (product.getPrincipalMax() == null || product.getPrincipalMax().compareTo(amount) >= 0)
+                && (product.getPrincipalMin() == null || product.getPrincipalMin().compareTo(amount) <= 0);
+    }
+
+    private List<LoanProductMapping> getActiveApplicationMappings(LoanRequestApplication application) {
+        if (application.getOriginationProfileId() == null)
+            throw new BadRequestException("Application origination profile is missing; complete the legacy backfill before selecting offers");
+        return loanProductMappingRepository.findAllByTenantIdAndOriginationProfileIdAndActiveTrueOrderByDisplayNameAsc(
+                application.getTenantId(), application.getOriginationProfileId());
     }
 
     private void maybeMoveToOffersReady(LoanRequestApplication application, String actor) {
@@ -673,17 +701,15 @@ public class ApplicationService {
         log.info("Bypassed statement analysis because tenant statementAnalysisMode=DISABLED actor={}", actor);
     }
 
-    private FineractLoanProduct requireActiveProduct(String tenantId, String productId) {
-        return getActiveTenantProducts(tenantId).stream()
-                .filter(product -> product.id().equals(productId))
-                .findFirst()
-                .orElseThrow(() -> new BadRequestException("Loan product is not active for the tenant"));
-    }
-
-    private List<FineractLoanProduct> getActiveTenantProducts(String tenantId) {
-        return loanProductMappingRepository.findAllByTenantIdAndActiveTrueOrderByDisplayNameAsc(tenantId).stream()
-                .map(this::toLoanProduct)
-                .toList();
+    private FineractLoanProduct requireActiveProduct(LoanRequestApplication application, String productId) {
+        if (application.getSelectedFineractProductId() != null && !application.getSelectedFineractProductId().equals(productId))
+            throw new BadRequestException("Financing product does not match the selected offer");
+        return getActiveApplicationMappings(application).stream()
+                .filter(product -> String.valueOf(product.getFineractProductId()).equals(productId))
+                .filter(product -> application.getSelectedLoanProductMappingId() == null
+                        || application.getSelectedLoanProductMappingId().equals(product.getId()))
+                .findFirst().map(this::toLoanProduct)
+                .orElseThrow(() -> new BadRequestException("Loan product is not active for the application profile or does not match its selection"));
     }
 
     private FineractLoanProduct toLoanProduct(LoanProductMapping mapping) {
@@ -796,7 +822,7 @@ public class ApplicationService {
                                 item.getReason()))
                         .toList(),
                 applicationVariables,
-                application.getOriginationProfileId());
+                application.getOriginationProfileId(), application.getSelectedLoanProductMappingId());
     }
 
     private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {
