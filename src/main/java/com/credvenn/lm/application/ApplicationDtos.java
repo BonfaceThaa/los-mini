@@ -112,7 +112,12 @@ public final class ApplicationDtos {
     public record EligibleProductRequirementsResponse(
             boolean kycApproved,
             boolean fineractClientCreated,
-            boolean statementApproved) {
+            boolean statementApproved,
+            java.util.Map<String,Boolean> capabilityChecks,
+            List<String> missingRequirements) {
+        public EligibleProductRequirementsResponse(boolean kycApproved, boolean fineractClientCreated, boolean statementApproved) {
+            this(kycApproved, fineractClientCreated, statementApproved, java.util.Map.of(), List.of());
+        }
     }
 
     @Schema(name = "EligibleProductsResponse")

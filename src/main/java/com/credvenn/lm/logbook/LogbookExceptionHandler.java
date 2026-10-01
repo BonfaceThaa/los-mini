@@ -11,7 +11,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.*;
 
-@Order(0) @RestControllerAdvice(assignableTypes=LogbookController.class)
+@Order(0) @RestControllerAdvice(assignableTypes={LogbookController.class, LogbookWorkflowController.class})
 public class LogbookExceptionHandler {
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ApiError> malformed(Exception exception, HttpServletRequest request) {

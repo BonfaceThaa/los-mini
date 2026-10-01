@@ -27,6 +27,7 @@ public final class LoanProductCatalogDtos {
                            "calculationPeriodType": "SAME_AS_REPAYMENT_PERIOD", "rateFrequency": "MONTHS"},
               "amortizationType": "EQUAL_INSTALLMENTS",
               "accountingTemplateCode": "STANDARD",
+              "transactionProcessingStrategyCode": "mifos-standard-strategy",
               "active": false,
               "originationProfileCode": "LOGBOOK"
             }

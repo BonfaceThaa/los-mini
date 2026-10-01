@@ -50,6 +50,7 @@ class PhoneOriginationBaselineTest {
     @Mock ApplicationVariableService variables;
     @Mock com.credvenn.lm.origination.OriginationProfileResolver profiles;
     @Mock jakarta.persistence.EntityManager entityManager;
+    @Mock com.credvenn.lm.logbook.LogbookWorkflowService logbook;
     @InjectMocks ApplicationService service;
 
     private LoanRequestApplication application;

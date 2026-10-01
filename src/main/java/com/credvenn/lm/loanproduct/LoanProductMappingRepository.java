@@ -16,6 +16,8 @@ public interface LoanProductMappingRepository extends JpaRepository<LoanProductM
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     Optional<LoanProductMapping> findForUpdateByTenantIdAndShortNameIgnoreCase(String tenantId, String shortName);
 
+    Optional<LoanProductMapping> findByTenantIdAndId(String tenantId, String id);
+
     boolean existsByTenantIdAndProductCodeIgnoreCase(String tenantId, String productCode);
 
     Optional<LoanProductMapping> findByTenantIdAndProductCodeIgnoreCase(String tenantId, String productCode);

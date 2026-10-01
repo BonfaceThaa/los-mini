@@ -114,7 +114,7 @@ public class ApplicationController {
     })
     @PostMapping("/{applicationId}/offers/select")
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
-    @Operation(summary = "Select an eligible loan product offer by product code", description = "Requires LOAN_CREATE. Supply exactly one of productCode (preferred) or deprecated fineractProductId. Checks KYC/client/statement readiness, tenant, saved application profile, active product and inclusive amount limits. Saves the local mapping ID and resolves the remote ID internally. A different product cannot replace calculated financing.")
+    @Operation(summary = "Select an eligible loan product offer by product code", description = "Requires LOAN_CREATE. Supply exactly one of productCode (preferred) or deprecated fineractProductId. Checks KYC/client/statement readiness, tenant, saved application profile, active product and inclusive amount limits. Logbook offers additionally require verified ownership, approved current valuation and requested amount within LTV. Saves the local mapping ID and resolves the remote ID internally. A different product cannot replace calculated financing.")
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> selectOffer(
             @PathVariable String applicationId,
             @Valid @RequestBody ApplicationDtos.SelectOfferRequest request) {
@@ -124,7 +124,7 @@ public class ApplicationController {
 
     @GetMapping("/{applicationId}/eligible-products")
     @PreAuthorize("hasAuthority('LOAN_VIEW')")
-    @Operation(summary = "List eligible products for the application profile", description = "Requires LOAN_VIEW. Returns readiness checks and active same-tenant/profile products within the requested amount bounds. Products include productCode, loanProductMappingId and originationProfileId. An unready application returns an empty products list.")
+    @Operation(summary = "List eligible products for the application profile", description = "Requires LOAN_VIEW. Returns readiness checks and active same-tenant/profile products within the requested amount bounds. Products include productCode, loanProductMappingId and originationProfileId. An unready application returns an empty products list. Logbook requirements include capabilityChecks and missingRequirements; supported products are KES with monthly cadence and a total term of at most 360 months.")
     public ResponseEntity<ApplicationDtos.EligibleProductsResponse> eligibleProducts(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
         return ResponseEntity.ok(applicationService.getEligibleProducts(actor.tenantId(), applicationId));
@@ -146,22 +146,36 @@ public class ApplicationController {
         return ResponseEntity.ok(applicationService.getLoanRepayments(actor.tenantId(), applicationId));
     }
 
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="200",description="Current application or completed phone-flow command"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="202",description="Logbook operation queued; poll logbook/workflow"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="400",description="Current workflow requirements are not satisfied"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="409",description="Application state changed or is not mutable")
+    })
     @PostMapping("/{applicationId}/internal-approval")
     @PreAuthorize("hasAuthority('CREDIT_MANUAL_APPROVE')")
-    @Operation(summary = "Perform internal approval and create a pending Fineract loan")
+    @Operation(summary = "Perform internal approval", description = "CREDIT_MANUAL_APPROVE. Phone flow retains its existing behavior. Logbook flow rechecks profile requirements and returns 202 with LOAN_CREATION_QUEUED; poll GET /applications/{applicationId}/logbook/workflow for the durable operation result.")
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> internalApproval(
             @PathVariable String applicationId,
             @Valid @RequestBody ApplicationDtos.InternalApprovalRequest request) {
         var actor = currentActorService.requireCurrentUser();
-        return ResponseEntity.ok(applicationService.internalApprove(actor.tenantId(), applicationId, actor.username(), request));
+        var result = applicationService.internalApprove(actor.tenantId(), applicationId, actor.username(), request);
+        return result.status() == ApplicationStatus.LOAN_CREATION_QUEUED ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
     }
 
+    @io.swagger.v3.oas.annotations.responses.ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="200",description="Current application or completed phone-flow command"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="202",description="Logbook operation queued; poll logbook/workflow"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="400",description="Current workflow requirements are not satisfied"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode="409",description="Application state changed or is not mutable")
+    })
     @PostMapping("/{applicationId}/activate-loan")
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
-    @Operation(summary = "Activate the Fineract loan after device assignment")
+    @Operation(summary = "Approve and disburse the pending loan", description = "LOAN_CREATE. Phone flow requires its device/deposit checks. Logbook flow requires current valuation, ownership, insurance, security, financing and credit checks, then returns 202 with DISBURSEMENT_QUEUED. The worker rechecks before the external action.")
     public ResponseEntity<ApplicationDtos.LoanRequestApplicationResponse> activateLoan(@PathVariable String applicationId) {
         var actor = currentActorService.requireCurrentUser();
-        return ResponseEntity.ok(applicationService.activateLoan(actor.tenantId(), applicationId, actor.username()));
+        var result = applicationService.activateLoan(actor.tenantId(), applicationId, actor.username());
+        return result.status() == ApplicationStatus.DISBURSEMENT_QUEUED ? ResponseEntity.accepted().body(result) : ResponseEntity.ok(result);
     }
 
     private static ApplicationDtos.StatementOtpResponse toStatementOtpResponse(ApplicationStatementOtpService.StatementOtpView otp) {

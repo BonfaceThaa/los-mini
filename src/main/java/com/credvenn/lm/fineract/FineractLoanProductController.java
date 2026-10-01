@@ -56,7 +56,7 @@ public class FineractLoanProductController {
     @PostMapping
     @PreAuthorize("hasAuthority('LOAN_CREATE')")
     @Operation(summary = "Create a tenant loan product in Mini-LOS and Fineract",
-            description = "Requires LOAN_CREATE. Omitted/null profile code uses the active tenant default; explicit codes may identify draft profiles. Profile validation precedes Fineract creation. Omit accountingAccounts to use configured tenant GL accounts, or supply all nine IDs. A logbook product can be configured now, but logbook application workflow execution is not enabled yet.",
+            description = "Requires LOAN_CREATE. Omitted/null profile code uses the active tenant default; explicit codes may identify draft profiles. Profile validation precedes Fineract creation. Omit accountingAccounts to use configured tenant GL accounts, or supply all nine IDs. Logbook workflow supports active same-profile KES products with monthly repayments and total term at most 360 months. Configure a supported Fineract payment strategy explicitly.",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                 content = @io.swagger.v3.oas.annotations.media.Content(
                     schema = @io.swagger.v3.oas.annotations.media.Schema(implementation = LoanProductCatalogDtos.CreateLoanProductRequest.class),

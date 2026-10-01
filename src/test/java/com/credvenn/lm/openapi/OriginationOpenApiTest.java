@@ -55,6 +55,11 @@ class OriginationOpenApiTest {
         try (var validatorFactory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
             assertTrue(validatorFactory.getValidator().validate(request).isEmpty());
         }
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/workflow"));
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/financing"));
+        assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/operations/{operationId}/retry"));
+        assertTrue(paths.path("/api/v1/applications/{applicationId}/internal-approval").path("post").path("responses").has("202"));
+        assertTrue(paths.path("/api/v1/applications/{applicationId}/activate-loan").path("post").path("responses").has("202"));
         assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook"));
         assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/vehicle"));
         assertTrue(paths.has("/api/v1/applications/{applicationId}/logbook/valuations/{valuationId}/review"));
@@ -82,8 +87,9 @@ class OriginationOpenApiTest {
     })
     @Import({OpenApiConfig.class, ProductOriginationController.class, FineractLoanProductController.class,
             ApplicationController.class, ApplicationVariableController.class, OriginationProfileController.class,
-            OriginationDefaultController.class, LogbookController.class})
+            OriginationDefaultController.class, LogbookController.class, LogbookWorkflowController.class})
     static class Config {
+        @Bean LogbookWorkflowService workflow() { return mock(LogbookWorkflowService.class); }
         @Bean LogbookService logbook() { return mock(LogbookService.class); }
         @Bean LoanProductCatalogService catalog() { return mock(LoanProductCatalogService.class); }
         @Bean ProductOriginationService productProfiles() { return mock(ProductOriginationService.class); }

@@ -48,7 +48,7 @@ class ApplicationServiceStatementOtpResponseTest {
                 mock(SubscriptionGuardService.class),
                 mock(SubscriptionBillingService.class),
                 mock(ApplicationVariableService.class),
-                mock(com.credvenn.lm.origination.OriginationProfileResolver.class), mock(jakarta.persistence.EntityManager.class));
+                mock(com.credvenn.lm.origination.OriginationProfileResolver.class), mock(jakarta.persistence.EntityManager.class), mock(com.credvenn.lm.logbook.LogbookWorkflowService.class));
 
         LoanRequestApplication application = new LoanRequestApplication();
         setId(application, "app-otp-1");

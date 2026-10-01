@@ -70,7 +70,7 @@ GET returns a null code if no default has been configured. Setting the same defa
 
 ## Logbook configuration
 
-Inactive profiles may describe the planned vehicle workflow using `VEHICLE_OWNERSHIP_VERIFIED`, `VALUATION_APPROVED`, `SECURITY_REGISTRATION_CONFIRMED`, and `INSURANCE_VALID` in applicable stages. A valuation requirement must include complete configuration:
+Logbook profiles describe the vehicle workflow using `VEHICLE_OWNERSHIP_VERIFIED`, `VALUATION_APPROVED`, `SECURITY_REGISTRATION_CONFIRMED`, and `INSURANCE_VALID` in applicable stages. A valuation requirement must include complete configuration:
 
 ```json
 {
@@ -82,7 +82,7 @@ Inactive profiles may describe the planned vehicle workflow using `VEHICLE_OWNER
 
 Allowed bases are MARKET_VALUE and FORCED_SALE_VALUE. LTV must be greater than zero and at most one; validity must be 1-3650 days. These bounds validate configuration shape, not a recommended credit policy.
 
-The corrected phone requirement set above and the complete legacy phone set can currently be activated. Vehicle workflow execution and a general requirement evaluator are not implemented yet; the API rejects activation rather than accepting configuration that the application flow cannot honor. This restriction is capability-based, not based on the profile code.
+The corrected and legacy phone contracts and the complete logbook contract can be activated. See [the workflow guide](logbook-workflow.md) for the exact supported logbook requirements. Arbitrary requirement combinations remain unsupported. Used profiles cannot switch between phone and logbook families.
 
 ## Scope of this increment
 
@@ -162,4 +162,4 @@ Example response excerpt:
 }
 ```
 
-No additional migration is required. Application and product creation now populate their profile references. Questionnaire listing and validation now use shared definitions plus those for the resolved profile. Product filtering now uses the saved application profile; requirement-driven workflow execution remains a later step. Asynchronous KYC startup remains in place. Only the supported phone configurations can currently be used.
+No additional migration is required. Application and product creation now populate their profile references. Questionnaire listing and validation now use shared definitions plus those for the resolved profile. Product filtering now uses the saved application profile; the complete logbook requirements now drive workflow gates. Asynchronous KYC startup remains in place. Supported phone and logbook configurations can be used; V40 adds the background logbook operation table.

@@ -1,8 +1,8 @@
 # Logbook capabilities (V39)
 
-This is the capability-records step. It implements vehicle capture, human ownership/insurance/security checks, valuation submission and independent review, and computed LTV readiness. It does **not** enable logbook profile activation, change the phone-finance workflow, create a Fineract loan, move money, call a registry/insurer, or provide a general requirements evaluator. Existing profile activation guards remain in place until the workflow integration step.
+V39 implements vehicle capture, human ownership/insurance/security checks, valuation submission and independent review, and computed LTV readiness. V40 connects these capabilities to application approval and asynchronous Fineract loan creation/disbursement; see [the workflow guide](logbook-workflow.md). Registry and insurer checks remain recorded human verification.
 
-The endpoints operate only on an application's saved tenant profile containing `VALUATION_APPROVED`, regardless of the profile's code. A code named `LOGBOOK` by itself grants no capabilities. Existing compatible applications can use these endpoints; ordinary API creation of new logbook applications remains blocked by the inactive-profile rule at this rollout stage. Do not bypass that rule or manually reclassify historical phone applications to try the endpoints. Automated tests use isolated logbook fixtures.
+The endpoints operate only on an application's saved tenant profile containing `VALUATION_APPROVED`, regardless of the profile's code. A code named `LOGBOOK` by itself grants no capabilities. Activate the complete supported logbook profile contract before creating new logbook applications. Do not reclassify historical phone applications.
 
 ## Database and rollout
 
@@ -143,7 +143,7 @@ The maximum is `valuation basis value * profile maxLtvRatio`, rounded **down** t
 
 A valuation dated September 20 with validity 30 days is valid through October 19; it expires at the start of October 20 in Africa/Nairobi. Approved-but-expired reports remain in history but no longer supply an LTV limit. A changed vehicle or new pending valuation also removes the effective limit.
 
-`GET {base}/audit` returns actor IDs, timestamps and before/after snapshots. Writes are blocked after internal approval, Fineract loan creation, rejection or closure. Future servicing changes require a separate controlled process.
+`GET {base}/audit` returns actor IDs, timestamps and before/after snapshots. Vehicle identity is frozen after internal approval or Fineract loan creation. Evidence can be renewed while security is pending; evidence writes are blocked while disbursement is queued, after activation, rejection or closure.
 
 ## Validation
 

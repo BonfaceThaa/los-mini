@@ -392,7 +392,7 @@ class ApplicationServiceTest {
                 applicationEventPublisher,
                 subscriptionGuardService,
                 subscriptionBillingService,
-                applicationVariableService, profiles, mock(jakarta.persistence.EntityManager.class));
+                applicationVariableService, profiles, mock(jakarta.persistence.EntityManager.class), mock(com.credvenn.lm.logbook.LogbookWorkflowService.class));
 
         private TestContext() {
             when(profiles.resolveForApplication("tenant-1", null)).thenReturn("profile-1");

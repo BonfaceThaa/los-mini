@@ -273,8 +273,27 @@ class OriginationProfileApiTest {
         }
         verify(profiles, never()).saveAndFlush(any());
     }
+    @Test void completeLogbookProfileCanActivateAndIncompleteContractCannot() throws Exception {
+        profile.setRequirementsJson(json.writeValueAsString(OriginationProfileValidator.LOGBOOK));
+        profile.setConfigurationJson("{\"valuationBasis\":\"FORCED_SALE_VALUE\",\"maxLtvRatio\":0.6,\"valuationValidityDays\":30}");
+        mvc.perform(patch(ROOT+"/PHONE_FINANCE").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"expectedVersion\":0,\"active\":true}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(true));
+        var incomplete=profile.getRequirementsJson().replace("\"INSURANCE_VALID\",", "").replace(",\"INSURANCE_VALID\"", "");
+        mvc.perform(patch(ROOT+"/PHONE_FINANCE").contentType(MediaType.APPLICATION_JSON)
+            .content("{\"expectedVersion\":1,\"requirements\":"+incomplete+"}"))
+            .andExpect(status().isBadRequest());
+    }
+    @Test void usedProfileCannotSwitchFromPhoneToLogbook() throws Exception {
+        when(context.getBean(com.credvenn.lm.application.LoanRequestApplicationRepository.class)
+            .existsByTenantIdAndOriginationProfileId("tenant-a","profile-a")).thenReturn(true);
+        String request="{\"expectedVersion\":0,\"requirements\":"+json.writeValueAsString(OriginationProfileValidator.LOGBOOK)
+            +",\"configuration\":{\"valuationBasis\":\"FORCED_SALE_VALUE\",\"maxLtvRatio\":0.6,\"valuationValidityDays\":30}}";
+        mvc.perform(patch(ROOT+"/PHONE_FINANCE").contentType(MediaType.APPLICATION_JSON).content(request)).andExpect(status().isConflict());
+    }
     @org.springframework.context.annotation.Configuration @EnableMethodSecurity
     static class Config {
+        @Bean com.credvenn.lm.application.LoanRequestApplicationRepository applications() { return mock(com.credvenn.lm.application.LoanRequestApplicationRepository.class); }
         @Bean OriginationProfileRepository profiles() { return mock(OriginationProfileRepository.class); }
         @Bean OriginationProfileAuditRepository audits() { return mock(OriginationProfileAuditRepository.class); }
         @Bean TenantRepository tenants() { return mock(TenantRepository.class); }
@@ -283,7 +302,7 @@ class OriginationProfileApiTest {
         @Bean OriginationProfileValidator validator() { return new OriginationProfileValidator(); }
         @Bean OriginationProfileService service(OriginationProfileRepository p, OriginationProfileAuditRepository a,
                 TenantRepository t, CurrentActorService actors, OriginationProfileValidator v, ObjectMapper j) {
-            return new OriginationProfileService(p, a, t, actors, v, j);
+            return new OriginationProfileService(p, a, t, actors, v, j, applications());
         }
     }
 }

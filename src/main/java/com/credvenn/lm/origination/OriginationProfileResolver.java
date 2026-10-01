@@ -44,7 +44,7 @@ public class OriginationProfileResolver {
                     .orElseThrow(() -> new ConflictException("Tenant default origination profile is unavailable"));
         }
         if (!profile.isActive()) throw new BadRequestException("Origination profile is inactive");
-        // Until workflow execution supports other journeys, reject unsupported stored configurations too.
+        // Reject stored configurations outside the supported phone and logbook workflow contracts.
         try {
             Map<OriginationProfileDtos.Stage, List<OriginationProfileDtos.Requirement>> requirements =
                     json.readValue(profile.getRequirementsJson(), new TypeReference<>() {});

@@ -339,6 +339,52 @@ public class HttpFineractGateway implements FineractGateway {
     }
 
     @Override
+    public java.util.Optional<LoanSummary> findSecuredLoan(Tenant tenant, LoanRequestApplication application) {
+        String externalId = "los-" + application.getId();
+        Object response = restClient.get().uri(builder -> builder.path("/loans").queryParam("externalId", externalId).queryParam("limit", 2).build())
+            .headers(headers -> applyHeaders(headers, tenant)).retrieve().body(Object.class);
+        if (!(response instanceof Map<?,?> page) || !(page.get("pageItems") instanceof List<?>))
+            throw new BadRequestException("Remote loan search response is incomplete; manual reconciliation required");
+        List<Map<String,Object>> matches = extractItems(response, "pageItems");
+        if (matches.isEmpty()) return java.util.Optional.empty();
+        if (matches.size() != 1) throw new BadRequestException("Ambiguous remote loan reference; manual reconciliation required");
+        var loan = matches.getFirst();
+        if (!externalId.equals(text(loan.get("externalId")))
+            || !application.getFineractClientId().equals(text(loan.get("clientId")))
+            || !application.getApprovedFineractProductId().equals(text(loan.get("loanProductId")))
+            || loan.get("principal") == null || application.getApprovedAmount().compareTo(new BigDecimal(loan.get("principal").toString())) != 0)
+            throw new BadRequestException("Remote loan reference does not match approved application; manual reconciliation required");
+        if (!(loan.get("status") instanceof Map<?,?> status) || loan.get("id") == null)
+            throw new BadRequestException("Remote loan response is incomplete");
+        return java.util.Optional.of(new LoanSummary(text(loan.get("id")),Boolean.TRUE.equals(status.get("active")),text(status.get("code"))));
+    }
+
+    @Override
+    public String createSecuredPendingLoan(Tenant tenant, LoanRequestApplication application,
+            FineractLoanProduct product, String transactionProcessingStrategyCode) {
+        var existing = findSecuredLoan(tenant, application);
+        if (existing.isPresent()) return existing.get().id();
+        Map<String,Object> payload = new LinkedHashMap<>();
+        payload.put("externalId", "los-" + application.getId());
+        payload.put("clientId", Long.parseLong(application.getFineractClientId()));
+        payload.put("productId", Long.parseLong(product.id()));
+        payload.put("loanType", "individual");
+        payload.put("principal", application.getApprovedAmount());
+        payload.put("numberOfRepayments", product.numberOfRepayments());
+        payload.put("repaymentEvery", product.repaymentEvery());
+        payload.put("repaymentFrequencyType", product.repaymentFrequencyType());
+        payload.put("loanTermFrequency", Math.multiplyExact(product.numberOfRepayments(), product.repaymentEvery()));
+        payload.put("loanTermFrequencyType", product.repaymentFrequencyType());
+        payload.put("interestType", product.interestType());
+        payload.put("interestCalculationPeriodType", product.interestCalculationPeriodType());
+        payload.put("interestRatePerPeriod", product.interestRatePerPeriod());
+        payload.put("amortizationType", product.amortizationType());
+        payload.put("transactionProcessingStrategyCode", transactionProcessingStrategyCode);
+        payload.put("submittedOnDate", today()); payload.put("expectedDisbursementDate", today());
+        payload.put("dateFormat", properties.dateFormat()); payload.put("locale", properties.locale());
+        return extractResourceId(post("/loans", tenant, payload));
+    }
+    @Override
     public void activateLoan(Tenant tenant, LoanRequestApplication application) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenant.getId(), application.getId())) {
             String fineractLoanId = application.getFineractLoanId();
@@ -713,8 +759,10 @@ public class HttpFineractGateway implements FineractGateway {
     private void applyHeaders(HttpHeaders headers, Tenant tenant) {
         String credentials = properties.username() + ":" + properties.password();
         headers.set(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8)));
-        // headers.set("Fineract-Platform-TenantId", tenant.getFineractTenantId());
-        headers.set("Fineract-Platform-TenantId", "default");
+
+        if (tenant.getFineractTenantId() == null || tenant.getFineractTenantId().isBlank())
+            throw new BadRequestException("Tenant Fineract routing is not configured");
+        headers.set("Fineract-Platform-TenantId", tenant.getFineractTenantId().trim());
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
     }
 

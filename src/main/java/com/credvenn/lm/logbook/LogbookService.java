@@ -48,6 +48,7 @@ public class LogbookService {
     public Summary saveVehicle(String applicationId, VehicleRequest request) {
         var actor = actors.requireCurrentUser();
         var application = application(actor.tenantId(), applicationId, true);
+        if (application.isInternalApproved() || application.getFineractLoanId() != null) throw new ConflictException("Vehicle identity is locked after internal approval");
         if (request.manufactureYear() > today().getYear()) throw new BadRequestException("Manufacture year cannot be in the future");
         var vehicle = vehicles.findByTenantIdAndApplicationId(actor.tenantId(), applicationId).orElse(null);
         String before = vehicle == null ? null : encode(vehicle);
@@ -148,9 +149,9 @@ public class LogbookService {
                     .noneMatch(r -> r == Requirement.VALUATION_APPROVED))
                 throw new BadRequestException("Application profile does not support vehicle valuation capabilities");
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Invalid stored profile requirements", e); }
-        if (write && (application.isInternalApproved() || application.getFineractLoanId() != null
+        if (write && (application.getStatus() == ApplicationStatus.DISBURSEMENT_QUEUED || application.getStatus() == ApplicationStatus.FINERACT_LOAN_ACTIVATED
                 || application.getStatus() == ApplicationStatus.REJECTED || application.getStatus() == ApplicationStatus.LOAN_CLOSED))
-            throw new ConflictException("Logbook evidence is locked after internal approval, loan creation or application closure");
+            throw new ConflictException("Logbook evidence is locked while disbursement is queued, after activation or application closure");
         return application;
     }
     private OriginationProfile profile(LoanRequestApplication application) {
@@ -201,6 +202,10 @@ public class LogbookService {
         try { return json.writeValueAsString(value); }
         catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Cannot serialize logbook audit", e); }
     }
+    /** Internal workflow read: caller has already authorized and loaded this tenant application. */
+    @Transactional(readOnly=true)
+    public Readiness readinessForWorkflow(LoanRequestApplication app) { return summary(app).readiness(); }
+
     private Summary summary(LoanRequestApplication app) {
         var vehicle = vehicles.findByTenantIdAndApplicationId(app.getTenantId(), app.getId()).orElse(null);
         var values = valuations.findAllByTenantIdAndApplicationIdOrderByRecordedVersionDesc(app.getTenantId(), app.getId());

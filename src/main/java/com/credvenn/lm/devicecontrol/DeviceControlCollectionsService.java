@@ -294,6 +294,7 @@ public class DeviceControlCollectionsService {
         }
         LoanRequestApplication application = applicationRepository.findByIdAndTenantId(applicationId, tenantId)
                 .orElseThrow(() -> new NotFoundException("Loan application not found"));
+        if (application.getAssignedDeviceId() == null) return; // Secured cash loans have no financed device.
         processAutoLockActivation(config, application, fineractLoanId, DeviceControlTriggerType.LOAN_ACTIVATED, "loan-activation", actor);
     }
 

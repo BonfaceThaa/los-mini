@@ -27,6 +27,7 @@ public class OriginationProfileService {
     private final CurrentActorService actors;
     private final OriginationProfileValidator validator;
     private final ObjectMapper json;
+    private final com.credvenn.lm.application.LoanRequestApplicationRepository applications;
 
     @PreAuthorize("hasAuthority('ORIGINATION_PROFILE_CREATE')")
     @Transactional
@@ -84,6 +85,10 @@ public class OriginationProfileService {
             throw new ConflictException("Select another default before deactivating this profile");
         var requirements = request.requirements() == null ? requirements(profile) : request.requirements();
         var configuration = request.configuration() == null ? configuration(profile) : request.configuration();
+        if (com.credvenn.lm.logbook.LogbookWorkflowPolicy.isLogbook(requirements)
+            != com.credvenn.lm.logbook.LogbookWorkflowPolicy.isLogbook(requirements(profile))
+            && applications.existsByTenantIdAndOriginationProfileId(actor.tenantId(),profile.getId()))
+            throw new ConflictException("A profile used by applications cannot change workflow family; create a separate profile");
         validator.validate(requirements, configuration, active);
         String name = request.displayName() == null ? profile.getDisplayName() : name(request.displayName());
         String description = request.description() == null ? profile.getDescription() : description(request.description());

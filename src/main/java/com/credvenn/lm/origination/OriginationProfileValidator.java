@@ -18,6 +18,12 @@ public class OriginationProfileValidator {
         Stage.INTERNAL_APPROVAL, Set.of(CONSENT_CAPTURED, CLIENT_PROVISIONED, DEVICE_ASSIGNED,
                 FINANCING_CALCULATED, ACTIVE_PRODUCT_SELECTED),
         Stage.DISBURSEMENT, Set.of(PENDING_LOAN_CREATED, DEVICE_ASSIGNED, DEPOSIT_MATCHED));
+    public static final Map<Stage, Set<Requirement>> LOGBOOK = Map.of(
+        Stage.OFFER_SELECTION, Set.of(KYC_APPROVED, CLIENT_PROVISIONED, STATEMENT_ACCEPTED, VEHICLE_OWNERSHIP_VERIFIED, VALUATION_APPROVED),
+        Stage.INTERNAL_APPROVAL, Set.of(KYC_APPROVED, CLIENT_PROVISIONED, STATEMENT_ACCEPTED, CONSENT_CAPTURED,
+            FINANCING_CALCULATED, ACTIVE_PRODUCT_SELECTED, VEHICLE_OWNERSHIP_VERIFIED, VALUATION_APPROVED),
+        Stage.DISBURSEMENT, Set.of(INTERNAL_APPROVAL_VALID, PENDING_LOAN_CREATED, VEHICLE_OWNERSHIP_VERIFIED,
+            VALUATION_APPROVED, SECURITY_REGISTRATION_CONFIRMED, INSURANCE_VALID));
     private static final Map<Stage, Set<Requirement>> ALLOWED = Map.of(
         Stage.OFFER_SELECTION, Set.of(KYC_APPROVED, CLIENT_PROVISIONED, STATEMENT_ACCEPTED,
                 VEHICLE_OWNERSHIP_VERIFIED, VALUATION_APPROVED),
@@ -53,9 +59,9 @@ public class OriginationProfileValidator {
         } else if (hasConfig) {
             throw new BadRequestException("Valuation configuration requires VALUATION_APPROVED");
         }
-        // Until profile-driven execution is implemented, only the existing phone journey is operational.
-        if (active && (hasConfig || (!matches(requirements, PHONE) && !matches(requirements, LEGACY_PHONE))))
-            throw new BadRequestException("Only the existing phone-finance requirement set can be activated; other workflows are not implemented yet");
+        // Activate only fully implemented workflow contracts; arbitrary combinations remain drafts.
+        if (active && !((!hasConfig && (matches(requirements, PHONE) || matches(requirements, LEGACY_PHONE))) || (hasConfig && matches(requirements, LOGBOOK))))
+            throw new BadRequestException("Only the supported phone-finance or complete logbook requirement set can be activated");
     }
     private boolean matches(Map<Stage, List<Requirement>> requirements, Map<Stage, Set<Requirement>> supported) {
         return supported.entrySet().stream()

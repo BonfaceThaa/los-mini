@@ -27,6 +27,8 @@ public interface StatementAnalysisRepository extends JpaRepository<StatementAnal
 
     Optional<StatementAnalysis> findFirstByApplicationIdOrderByCreatedAtDesc(String applicationId);
 
+    Optional<StatementAnalysis> findFirstByTenantIdAndApplicationIdOrderByCreatedAtDesc(String tenantId, String applicationId);
+
     List<StatementAnalysis> findAllByApplicationIdOrderByCreatedAtDesc(String applicationId);
 
     boolean existsByApplicationIdAndStatusIn(String applicationId, java.util.Collection<StatementAnalysisStatus> statuses);

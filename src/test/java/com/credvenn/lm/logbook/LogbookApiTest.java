@@ -94,6 +94,16 @@ class LogbookApiTest {
     }
     private String check(String dates) { return "{\"expectedVersion\":"+vehicle.getVersion()+",\"status\":\"VERIFIED\",\"referenceNumber\":\"REF1\",\"documentId\":\"doc\",\"notes\":\"Evidence reviewed\""+dates+"}"; }
 
+    @Test void renewsEvidenceAfterApprovalButFreezesIdentityAndQueuedDisbursement() throws Exception {
+        capture(); application.setInternalApproved(true); application.setFineractLoanId("42");
+        submit();
+        mvc.perform(put(ROOT+"/vehicle").contentType(MediaType.APPLICATION_JSON)
+            .content(VEHICLE.replace("{","{\"expectedVersion\":"+vehicle.getVersion()+",")))
+            .andExpect(status().isConflict());
+        application.setStatus(ApplicationStatus.DISBURSEMENT_QUEUED);
+        mvc.perform(post(ROOT+"/valuations").contentType(MediaType.APPLICATION_JSON).content(valuation(today)))
+            .andExpect(status().isConflict());
+    }
     @Test void capturesValuationAndIndependentApprovalWithExactLtvBoundary() throws Exception {
         capture(); assertEquals("KDA123A", vehicle.getRegistrationNumber()); submit();
         review("APPROVED").andExpect(status().isForbidden());

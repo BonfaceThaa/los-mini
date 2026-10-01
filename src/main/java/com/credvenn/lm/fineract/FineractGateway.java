@@ -355,6 +355,12 @@ public interface FineractGateway {
             BigDecimal approvedAmount,
             Integer approvedTermMonths);
 
+    /** Resolve the application's deterministic external reference and validate remote client/product/principal. */
+    java.util.Optional<LoanSummary> findSecuredLoan(Tenant tenant, LoanRequestApplication application);
+
+    String createSecuredPendingLoan(Tenant tenant, LoanRequestApplication application,
+            FineractLoanProduct product, String transactionProcessingStrategyCode);
+
     void activateLoan(Tenant tenant, LoanRequestApplication application);
 
     LoanSummary getLoanSummary(Tenant tenant, String fineractLoanId);

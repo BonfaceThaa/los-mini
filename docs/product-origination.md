@@ -86,7 +86,7 @@ Device pricing and internal approval also enforce the application's product/prof
 
 Deploy after V36-V38. New applications and products now populate their profile references, and new selections save the local mapping ID. Records written by older application instances between rollout stages may still require reconciliation. Use the association endpoint to classify unassigned products, and the documented backfill process for missing application profiles or unresolved historical selections.
 
-Profile deactivation blocks new applications; existing applications retain their saved profile. Product deactivation removes it from offers and approval eligibility. This step does not enable logbook workflow execution or implement a generic requirements evaluator. The new association/selection paths are local operations; existing catalog provisioning continues through the existing Fineract gateway integration.
+Profile deactivation blocks new applications; existing applications retain their saved profile. Product deactivation removes it from offers and approval eligibility. The complete logbook contract is executable; see [the workflow guide](logbook-workflow.md) for supported products and approval/disbursement gates. The new association/selection paths are local operations; existing catalog provisioning continues through the existing Fineract gateway integration.
 
 ## Tests
 

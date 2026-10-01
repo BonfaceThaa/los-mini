@@ -47,5 +47,7 @@ public interface LoanRequestApplicationRepository extends JpaRepository<LoanRequ
             String tenantId,
             ApplicationStatus status);
 
+    boolean existsByTenantIdAndOriginationProfileId(String tenantId, String originationProfileId);
+
     long countByTenantIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(String tenantId, Instant start, Instant end);
 }

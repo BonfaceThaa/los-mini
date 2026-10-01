@@ -50,6 +50,7 @@ class ApplicationOriginationProfileTest {
     @Mock TenantRepository tenants;
     @Mock OriginationProfileRepository profiles;
     @Mock jakarta.persistence.EntityManager entityManager;
+    @Mock com.credvenn.lm.logbook.LogbookWorkflowService logbook;
     @InjectMocks ApplicationService service;
     private Tenant tenant;
     private OriginationProfile profile;

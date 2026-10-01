@@ -80,6 +80,7 @@ public class ApplicationService {
     private final ApplicationVariableService applicationVariableService;
     private final OriginationProfileResolver originationProfileResolver;
     private final jakarta.persistence.EntityManager entityManager;
+    private final com.credvenn.lm.logbook.LogbookWorkflowService logbook;
 
     public ApplicationService(
             LoanRequestApplicationRepository applicationRepository,
@@ -98,7 +99,7 @@ public class ApplicationService {
             SubscriptionGuardService subscriptionGuardService,
             SubscriptionBillingService subscriptionBillingService,
             ApplicationVariableService applicationVariableService,
-            OriginationProfileResolver originationProfileResolver, jakarta.persistence.EntityManager entityManager) {
+            OriginationProfileResolver originationProfileResolver, jakarta.persistence.EntityManager entityManager, com.credvenn.lm.logbook.LogbookWorkflowService logbook) {
         this.applicationRepository = applicationRepository;
         this.statusHistoryRepository = statusHistoryRepository;
         this.kycCheckRepository = kycCheckRepository;
@@ -117,6 +118,7 @@ public class ApplicationService {
         this.applicationVariableService = applicationVariableService;
         this.originationProfileResolver = originationProfileResolver;
         this.entityManager = entityManager;
+        this.logbook = logbook;
     }
 
     @Transactional
@@ -221,6 +223,11 @@ public class ApplicationService {
             ApplicationDtos.CaptureConsentRequest request) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (logbook.applies(application)) {
+                logbook.lock(tenantId, applicationId);
+                if (application.isInternalApproved() || application.getFineractLoanId() != null)
+                    throw new BadRequestException("Consent is locked after logbook approval");
+            }
             if (!request.accepted()) {
                 throw new BadRequestException("Consent must be accepted before internal approval");
             }
@@ -242,6 +249,7 @@ public class ApplicationService {
             ApplicationDtos.SelectOfferRequest request) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (logbook.applies(application)) logbook.lock(tenantId, applicationId);
             if ((request.productCode() == null) == (request.fineractProductId() == null))
                 throw new BadRequestException("Supply exactly one of productCode or legacy fineractProductId");
             String selector = request.productCode() != null ? request.productCode().trim() : request.fineractProductId().trim();
@@ -287,7 +295,7 @@ public class ApplicationService {
                 new ApplicationDtos.EligibleProductRequirementsResponse(
                         readiness.kycApproved(),
                         readiness.fineractClientCreated(),
-                        readiness.statementApproved()),
+                        readiness.statementApproved(), readiness.capabilityChecks(), readiness.missingRequirements()),
                 products);
     }
 
@@ -319,6 +327,11 @@ public class ApplicationService {
             ApplicationDtos.InternalApprovalRequest request) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (logbook.applies(application)) {
+                logbook.approve(tenantId, applicationId, actor, request.reason());
+                applicationRepository.flush();
+                return get(tenantId, applicationId);
+            }
             if (!application.isConsentCaptured()) {
                 throw new BadRequestException("Consent must be captured before internal approval");
             }
@@ -367,6 +380,11 @@ public class ApplicationService {
     public ApplicationDtos.LoanRequestApplicationResponse activateLoan(String tenantId, String applicationId, String actor) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (logbook.applies(application)) {
+                logbook.disburse(tenantId, applicationId, actor);
+                applicationRepository.flush();
+                return get(tenantId, applicationId);
+            }
             if (application.getFineractLoanId() == null || application.getFineractLoanId().isBlank()) {
                 throw new BadRequestException("Pending Fineract loan has not been created");
             }
@@ -519,6 +537,7 @@ public class ApplicationService {
     public void handleDeviceAssigned(String tenantId, String applicationId, String actor, InventoryDevice device) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             LoanRequestApplication application = getRequired(tenantId, applicationId);
+            if (logbook.applies(application)) throw new BadRequestException("Device financing does not apply to logbook applications");
             if (application.getSelectedFineractProductId() == null || application.getSelectedFineractProductId().isBlank()) {
                 throw new BadRequestException("A Fineract product must be selected before device assignment");
             }
@@ -588,7 +607,8 @@ public class ApplicationService {
 
     private List<LoanProductMapping> getEligibleProductsByAmount(LoanRequestApplication application) {
         return getActiveApplicationMappings(application).stream()
-                .filter(product -> amountEligible(product, application.getRequestedAmount())).toList();
+                .filter(product -> amountEligible(product, application.getRequestedAmount()))
+                .filter(product -> !logbook.applies(application) || logbook.supports(product)).toList();
     }
 
     private boolean amountEligible(LoanProductMapping product, BigDecimal amount) {
@@ -619,6 +639,12 @@ public class ApplicationService {
     }
 
     private OfferReadiness assessOfferReadiness(LoanRequestApplication application) {
+        if (logbook.applies(application)) {
+            var result = logbook.evaluate(application, com.credvenn.lm.origination.OriginationProfileDtos.Stage.OFFER_SELECTION);
+            return new OfferReadiness(result.ready(), Boolean.TRUE.equals(result.checks().get("KYC_APPROVED")),
+                Boolean.TRUE.equals(result.checks().get("CLIENT_PROVISIONED")), Boolean.TRUE.equals(result.checks().get("STATEMENT_ACCEPTED")),
+                result.ready() ? "Offers ready" : "Missing logbook requirements: " + String.join(", ", result.missingRequirements()), result.checks(), result.missingRequirements());
+        }
         Tenant tenant = tenantService.getRequiredTenant(application.getTenantId());
         boolean kycApproved = kycCheckRepository.findFirstByApplicationIdOrderByCreatedAtDesc(application.getId())
                 .map(check -> check.getStatus() == KycStatus.PASSED || check.getStatus() == KycStatus.MANUALLY_APPROVED)
@@ -673,7 +699,10 @@ public class ApplicationService {
             boolean kycApproved,
             boolean fineractClientCreated,
             boolean statementApproved,
-            String message) {
+            String message, Map<String,Boolean> capabilityChecks, List<String> missingRequirements) {
+        private OfferReadiness(boolean offersReady,boolean kycApproved,boolean fineractClientCreated,boolean statementApproved,String message) {
+            this(offersReady,kycApproved,fineractClientCreated,statementApproved,message,Map.of(),List.of());
+        }
     }
 
     private void recordDisabledStatementAnalysis(LoanRequestApplication application, String actor) {
@@ -735,6 +764,13 @@ public class ApplicationService {
     }
 
     private void changeStatus(LoanRequestApplication application, ApplicationStatus newStatus, String actor, String reason) {
+        if (logbook.applies(application) && application.getSelectedFineractProductId() != null
+            && java.util.EnumSet.of(ApplicationStatus.PENDING_KYC, ApplicationStatus.KYC_IN_PROGRESS,
+                ApplicationStatus.KYC_PASSED, ApplicationStatus.KYC_FAILED, ApplicationStatus.KYC_MANUAL_REVIEW,
+                ApplicationStatus.CLIENT_CREATION_IN_PROGRESS, ApplicationStatus.CLIENT_CREATION_FAILED,
+                ApplicationStatus.KYC_PASSED_CLIENT_CREATED, ApplicationStatus.STATEMENT_PENDING,
+                ApplicationStatus.STATEMENT_IN_PROGRESS, ApplicationStatus.STATEMENT_FAILED,
+                ApplicationStatus.STATEMENT_MANUAL_REVIEW, ApplicationStatus.STATEMENT_VERIFIED, ApplicationStatus.OFFERS_READY).contains(newStatus)) return;
         if (application.getStatus() == newStatus) {
             return;
         }
