@@ -49,3 +49,17 @@ ApplicationProfilePersistenceTest validates application profile persistence with
 ApplicationVariableScopePersistenceTest validates shared/profile-specific definition queries, required-answer validation, tenant isolation and immutable answer snapshots on MariaDB. See [questionnaire scopes](application-variable-scopes.md).
 
 ProductProfilePersistenceTest checks profile-filtered product queries, selected mapping persistence and historical selection guards using real Hibernate repositories on MariaDB.
+
+## Restored database collation
+
+`beforeEachMigrate__align_restored_database_collation.sql` aligns the database default with `tenants.id` on Flyway's migration connection immediately before each pending migration. Restored tables keep their original collation; a newly created restore database can have a different default. The callback changes only the default used by future tables and columns and requires ALTER permission on the LOS database. On an empty database it does nothing. With no pending migrations it does not run. Existing versioned migrations are unchanged.
+
+If V36 already failed, first verify that `origination_profiles` and all V36 reference columns are absent. Flyway validates failed history before invoking migration callbacks, so the failed history entry must be repaired first. Use Flyway repair with the same migration locations and inspect its checksum changes; do not run Flyway clean. Alternatively, after confirming V36 failed at its first CREATE TABLE and left no schema changes, remove only the failed V36 history row:
+
+```sql
+DELETE FROM flyway_schema_history WHERE version = '36' AND success = 0;
+```
+
+Restart the rebuilt app against the restored copy and verify migration through V40 before production rollout. Do not remove successful migration history or modify V36/V37 checksums.
+
+The restored-database regression test creates tables using `utf8mb4_unicode_ci`, changes only the database default to `utf8mb4_uca1400_ai_ci`, then verifies upgrade through V40, preservation of a legacy loan reference, and repeat migration.

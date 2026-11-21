@@ -16,6 +16,20 @@ class OriginationProfileMigrationTest {
     private static final String USER = "root";
 
     @Test
+    void restoredDatabaseDefaultIsAlignedBeforeUpgrade() throws Exception {
+        withDatabase((url, connection) -> {
+            execute(connection, "ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            migrate(url, "35");
+            legacyRows(connection, "a");
+            execute(connection, "ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci");
+            migrate(url, "40");
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE() AND DEFAULT_COLLATION_NAME = 'utf8mb4_unicode_ci'"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM loan_request_applications WHERE tenant_id = 'a' AND fineract_loan_id = 'existing-loan'"));
+            assertEquals(0, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = FALSE"));
+            migrate(url, "40");
+        });
+    }
+    @Test
     void freshDatabaseMigratesThroughProfiles() throws Exception {
         withDatabase((url, connection) -> {
             migrate(url, "36");

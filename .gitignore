@@ -1,9 +1,12 @@
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
+TODO: remember to inlude the following in repo
 .mvn/
 mvnw
 mvnw.cmd
+
+
 !**/src/main/**/target/
 !**/src/test/**/target/
 
