@@ -203,6 +203,45 @@ class StatementAnalysisServiceTest {
         assertEquals(StatementEffectiveOutcome.APPROVED, response.effectiveOutcome());
     }
 
+    @Test
+    void getExposesInternalSnapshotOnlyForAuthenticatedTenant() throws Exception {
+        TestContext context = new TestContext();
+        var internal = analysis("analysis-1", StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED, "INTERNAL_MPESA", Instant.parse("2026-07-02T09:00:00Z"));
+        try (var pdf = getClass().getResourceAsStream("/fixtures/balance-example.pdf")) {
+            var result = new com.credvenn.stmt.analyzer.core.DefaultStatementAnalyzer().analyze(
+                    new com.credvenn.stmt.analyzer.core.AnalysisInput(pdf.readAllBytes(), null, "MPESA", "analysis-1"));
+            internal.setRawProviderResponse(context.objectMapper.writeValueAsString(result));
+        }
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application("app-1", ApplicationStatus.STATEMENT_MANUAL_REVIEW));
+        when(context.statementAnalysisRepository.findAllByTenantIdAndApplicationIdOrderByCreatedAtDesc("tenant-1", "app-1")).thenReturn(List.of(internal));
+        var response = context.service.get("tenant-1", "app-1");
+        assertNotNull(response.analysis().statement());
+        assertNotNull(response.analysis().categories());
+        assertEquals(new java.math.BigDecimal("32076.81"), response.analysis().totalIn());
+        assertFalse(response.analysis().monthlyMetrics().isEmpty());
+        assertNull(response.analysis().creditScore());
+        verify(context.transactionRepository, never()).findAllByStatementAnalysisIdOrderByCreatedAtAsc(anyString());
+
+        when(context.applicationService.getRequired("tenant-2", "app-1")).thenThrow(new com.credvenn.lm.common.exception.NotFoundException("not found"));
+        assertThrows(com.credvenn.lm.common.exception.NotFoundException.class, () -> context.service.get("tenant-2", "app-1"));
+        verify(context.statementAnalysisRepository, never()).findAllByTenantIdAndApplicationIdOrderByCreatedAtDesc("tenant-2", "app-1");
+    }
+
+    @Test
+    void cladfyJsonDoesNotGainInternalSections() throws Exception {
+        TestContext context = new TestContext();
+        var cladfy = analysis("analysis-1", StatementAnalysisStatus.PASSED, "CLADFY", Instant.parse("2026-07-02T09:00:00Z"));
+        var response = context.service.toAnalysisResponse(cladfy);
+        var tree = context.objectMapper.valueToTree(response);
+        assertNotNull(tree.get("loans"));
+        assertNotNull(tree.get("transactions"));
+        assertNull(tree.get("statement"));
+        assertNull(tree.get("monthlySummary"));
+        assertNull(tree.get("monthlyMetrics"));
+        assertNull(tree.get("categories"));
+        assertNull(tree.get("quality"));
+    }
+
     private static com.credvenn.lm.application.LoanRequestApplication application(String id, ApplicationStatus status) {
         var application = new com.credvenn.lm.application.LoanRequestApplication();
         setField(application, com.credvenn.lm.application.LoanRequestApplication.class, "id", id);
@@ -278,7 +317,7 @@ class StatementAnalysisServiceTest {
         private final StatementReviewService statementReviewService = mock(StatementReviewService.class);
         private final CladfyStatementTransactionRepository transactionRepository = mock(CladfyStatementTransactionRepository.class);
         private final com.credvenn.lm.application.ApplicationStatementOtpService applicationStatementOtpService = mock(com.credvenn.lm.application.ApplicationStatementOtpService.class);
-        private final ObjectMapper objectMapper = new ObjectMapper();
+        private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         private final StatementAnalysisService service = new StatementAnalysisService(
                 statementAnalysisRepository,
                 applicationEventPublisher,

@@ -10,6 +10,7 @@ import com.credvenn.lm.common.logging.LoggingContext;
 import com.credvenn.lm.document.DocumentService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.credvenn.stmt.analyzer.core.AnalysisResult;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -243,19 +244,24 @@ public class StatementAnalysisService {
     }
 
     StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(StatementAnalysis analysis) {
+        if ("INTERNAL_MPESA".equalsIgnoreCase(analysis.getProvider())) {
+            AnalysisResult result = InternalStatementResultMapper.read(objectMapper, analysis);
+            return toAnalysisResponse(analysis, null, List.of(), result);
+        }
         StoredAnalysisResponse storedResponse = parseStoredAnalysisResponse(analysis.getRawProviderResponse()).orElse(null);
         return toAnalysisResponse(
                 analysis,
                 storedResponse,
                 cladfyStatementTransactionRepository.findAllByStatementAnalysisIdOrderByCreatedAtAsc(analysis.getId()).stream()
                         .map(StatementAnalysisService::toTransactionResponse)
-                        .toList());
+                        .toList(), null);
     }
 
     static StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(
             StatementAnalysis analysis,
             StoredAnalysisResponse storedResponse,
-            List<StatementDtos.StatementTransactionResponse> transactions) {
+            List<StatementDtos.StatementTransactionResponse> transactions,
+            AnalysisResult internalResult) {
         return new StatementDtos.StatementProviderAnalysisResponse(
                 analysis.getId(),
                 analysis.getApplicationId(),
@@ -270,12 +276,17 @@ public class StatementAnalysisService {
                 analysis.getRecommendation(),
                 analysis.getSummary(),
                 storedResponse == null ? null : storedResponse.last_analyzed_on(),
-                storedResponse == null ? null : storedResponse.total_in(),
-                storedResponse == null ? null : storedResponse.total_out(),
+                internalResult != null ? internalResult.totalInflow() : storedResponse == null ? null : storedResponse.total_in(),
+                internalResult != null ? internalResult.totalOutflow() : storedResponse == null ? null : storedResponse.total_out(),
                 toLoanSummaryResponses(storedResponse),
                 transactions,
                 analysis.getCreatedAt(),
-                analysis.getUpdatedAt());
+                analysis.getUpdatedAt(),
+                InternalStatementResultMapper.statement(internalResult),
+                InternalStatementResultMapper.monthlySummary(internalResult),
+                InternalStatementResultMapper.monthlyMetrics(internalResult),
+                InternalStatementResultMapper.categories(analysis.getId(), internalResult),
+                InternalStatementResultMapper.quality(internalResult));
     }
 
     private Optional<StoredAnalysisResponse> parseStoredAnalysisResponse(String rawProviderResponse) {
