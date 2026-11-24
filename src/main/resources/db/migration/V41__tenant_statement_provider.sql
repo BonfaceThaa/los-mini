@@ -1,0 +1,2 @@
+ALTER TABLE tenants
+    ADD COLUMN statement_provider VARCHAR(30) NOT NULL DEFAULT 'CLADFY';

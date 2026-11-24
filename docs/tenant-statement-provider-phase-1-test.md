@@ -1,0 +1,13 @@
+# Tenant statement provider: phase 1 manual test
+
+Phase 1 stores a provider per tenant and snapshots it on new analyses. `INTERNAL_MPESA` can be selected but cannot process statements until the analyzer is integrated in a later phase. Attempting to start a non-simulated analysis for it returns a provider-not-available error before creating an analysis. Cladfy credentials and an eligible application with an uploaded M-Pesa statement and valid statement OTP are needed to exercise the Cladfy flow.
+
+1. Start the application against a migrated test database. Flyway migration V41 assigns `CLADFY` to existing tenants. Authenticate as a platform administrator with `TENANT_CREATE`, `TENANT_VIEW_ALL`, and `TENANT_MANAGE_ALL`.
+2. Call `GET /api/v1/internal/tenants/{tenantId}` for an existing tenant. Verify `statementProvider` is `CLADFY` and existing analyses retain their original `provider` value.
+3. Call `POST /api/v1/internal/tenants` with the normal onboarding fields plus `"statementProvider": "INTERNAL_MPESA"`. Verify the response and a subsequent GET show `INTERNAL_MPESA`. Omit the field on another new tenant and verify it defaults to `CLADFY`. An invalid value should return a validation/deserialization error.
+4. Call `PATCH /api/v1/internal/tenants/{tenantId}/statement-provider` with `{"statementProvider":"CLADFY"}`. Verify the response and GET show `CLADFY`. Repeat with `INTERNAL_MPESA`; verify a missing or invalid value is rejected. Use a tenant user without `TENANT_MANAGE_ALL` and verify the PATCH is forbidden.
+5. With a Cladfy tenant, submit `POST /api/v1/applications/{applicationId}/statement-analysis/run?documentId={documentId}` as a user with `CREDIT_CHECK_RUN`. Verify the response has `analysis.provider` set to `CLADFY`, and the existing Cladfy processing flow operates as before. Change the tenant setting after the request is accepted; verify the analysis still reports `CLADFY` and is processed with that provider.
+6. For an internal-provider tenant, submit the same non-simulated request for an eligible application. Verify the API reports `Statement analysis provider is not available: INTERNAL_MPESA` and no new pending analysis is created. This is expected until the internal adapter is delivered.
+7. Verify users from a different tenant cannot access the application or statement analysis through the normal application endpoints. Tenant management endpoints require platform-wide permissions and are not tenant self-service endpoints.
+
+Tenant IDs in internal administration URLs are administrative targets; statement-analysis tenant identity continues to come from the authenticated user. Do not use production statements or credentials for these tests.

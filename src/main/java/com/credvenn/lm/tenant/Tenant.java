@@ -38,6 +38,13 @@ public class Tenant extends AuditableEntity {
     @Column(name = "statement_analysis_mode", nullable = false, length = 20)
     private TenantStatementAnalysisMode statementAnalysisMode = TenantStatementAnalysisMode.AUTO;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statement_provider", nullable = false, length = 30)
+    private TenantStatementProvider statementProvider = TenantStatementProvider.CLADFY;
+
+    public TenantStatementProvider getStatementProvider() { return statementProvider; }
+    public void setStatementProvider(TenantStatementProvider statementProvider) { this.statementProvider = statementProvider; }
+
     @Column(name = "default_origination_profile_id", length = 36)
     private String defaultOriginationProfileId;
 

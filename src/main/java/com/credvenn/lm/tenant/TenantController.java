@@ -74,4 +74,13 @@ public class TenantController {
             @Valid @RequestBody TenantDtos.UpdateTenantStatementAnalysisModeRequest request) {
         return ResponseEntity.ok(tenantService.updateStatementAnalysisMode(tenantId, request));
     }
+
+    @PatchMapping("/{tenantId}/statement-provider")
+    @PreAuthorize("hasAuthority('TENANT_MANAGE_ALL')")
+    @Operation(summary = "Update the provider for new tenant statement analyses")
+    public ResponseEntity<TenantDtos.TenantResponse> updateStatementProvider(
+            @PathVariable String tenantId,
+            @Valid @RequestBody TenantDtos.UpdateTenantStatementProviderRequest request) {
+        return ResponseEntity.ok(tenantService.updateStatementProvider(tenantId, request));
+    }
 }

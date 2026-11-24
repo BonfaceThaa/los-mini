@@ -21,7 +21,7 @@ class StatementAnalysisProcessingServiceTest {
         TestContext context = new TestContext();
         var work = work(false);
         var submission = submission();
-        when(context.registry.currentProvider()).thenReturn(context.provider);
+        when(context.registry.byCode("CLADFY")).thenReturn(context.provider);
         when(context.provider.providerCode()).thenReturn("CLADFY");
         when(context.provider.supportsAsyncWebhookCompletion()).thenReturn(true);
         when(context.preparation.prepare("tenant-1", "analysis-1", "system", "CLADFY", true)).thenReturn(work);
@@ -40,7 +40,7 @@ class StatementAnalysisProcessingServiceTest {
         var firstWork = work(false);
         var retryWork = work(true);
         var recovered = submission();
-        when(context.registry.currentProvider()).thenReturn(context.provider);
+        when(context.registry.byCode("CLADFY")).thenReturn(context.provider);
         when(context.provider.providerCode()).thenReturn("CLADFY");
         when(context.provider.supportsAsyncWebhookCompletion()).thenReturn(true);
         when(context.preparation.prepare("tenant-1", "analysis-1", "system", "CLADFY", true))
@@ -64,7 +64,7 @@ class StatementAnalysisProcessingServiceTest {
         var work = work(false);
         var decision = new StatementAnalysisProvider.StatementDecision(
                 StatementAnalysisStatus.FAILED, null, null, null, "DECLINE", "Rejected");
-        when(context.registry.currentProvider()).thenReturn(context.provider);
+        when(context.registry.byCode("CLADFY")).thenReturn(context.provider);
         when(context.provider.providerCode()).thenReturn("DIRECT");
         when(context.provider.supportsAsyncWebhookCompletion()).thenReturn(false);
         when(context.preparation.prepare("tenant-1", "analysis-1", "system", "DIRECT", false)).thenReturn(work);
@@ -105,7 +105,14 @@ class StatementAnalysisProcessingServiceTest {
         private final StatementAnalysisProvider provider = mock(StatementAnalysisProvider.class);
         private final StatementSubmissionPreparationService preparation = mock(StatementSubmissionPreparationService.class);
         private final StatementSubmissionCompletionService completion = mock(StatementSubmissionCompletionService.class);
+        private final StatementAnalysisRepository repository = mock(StatementAnalysisRepository.class);
         private final StatementAnalysisProcessingService service = new StatementAnalysisProcessingService(
-                registry, preparation, completion);
+                registry, preparation, completion, repository);
+
+        private TestContext() {
+            StatementAnalysis analysis = new StatementAnalysis();
+            analysis.setProvider("CLADFY");
+            when(repository.findByIdAndTenantId("analysis-1", "tenant-1")).thenReturn(Optional.of(analysis));
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.credvenn.lm.statement;
 
 import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.lm.common.logging.LoggingContext;
 import java.math.BigDecimal;
 import java.util.Locale;
@@ -21,19 +22,25 @@ public class StatementAnalysisProcessingService {
     private final StatementProviderRegistry statementProviderRegistry;
     private final StatementSubmissionPreparationService preparationService;
     private final StatementSubmissionCompletionService completionService;
+    private final StatementAnalysisRepository analysisRepository;
 
     public StatementAnalysisProcessingService(
             StatementProviderRegistry statementProviderRegistry,
             StatementSubmissionPreparationService preparationService,
-            StatementSubmissionCompletionService completionService) {
+            StatementSubmissionCompletionService completionService,
+            StatementAnalysisRepository analysisRepository) {
         this.statementProviderRegistry = statementProviderRegistry;
         this.preparationService = preparationService;
         this.completionService = completionService;
+        this.analysisRepository = analysisRepository;
     }
 
     @Async
     public void process(String tenantId, String analysisId, String actor, String simulateOutcome) {
-        StatementAnalysisProvider provider = statementProviderRegistry.currentProvider();
+        String savedProvider = analysisRepository.findByIdAndTenantId(analysisId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Statement analysis not found")).getProvider();
+        StatementAnalysisProvider provider = "SIMULATED".equals(savedProvider) || "QUEUED".equals(savedProvider)
+                ? statementProviderRegistry.currentProvider() : statementProviderRegistry.byCode(savedProvider);
         StatementAnalysisProvider.StatementDecision simulatedDecision = simulatedDecision(simulateOutcome);
         boolean asynchronousSubmission = simulatedDecision == null && provider.supportsAsyncWebhookCompletion();
 

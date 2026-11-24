@@ -128,8 +128,7 @@ class StatementAnalysisServiceTest {
         setField(document, com.credvenn.lm.document.ApplicationDocument.class, "id", "doc-1");
         document.setApplicationId("app-1");
         when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
-        when(context.statementProviderRegistry.currentProvider()).thenReturn(context.provider);
-        when(context.provider.providerCode()).thenReturn("CLADFY");
+        when(context.statementProviderRegistry.providerForTenant("tenant-1")).thenReturn("CLADFY");
         when(context.applicationStatementOtpService.findFirstPendingOtpThatOpensDocument("tenant-1", "app-1", "doc-1")).thenReturn(Optional.empty());
 
         BadRequestException exception = assertThrows(BadRequestException.class, () -> context.service.run(
@@ -153,8 +152,7 @@ class StatementAnalysisServiceTest {
 
         when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
         when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
-        when(context.statementProviderRegistry.currentProvider()).thenReturn(context.provider);
-        when(context.provider.providerCode()).thenReturn("CLADFY");
+        when(context.statementProviderRegistry.providerForTenant("tenant-1")).thenReturn("CLADFY");
         when(context.applicationStatementOtpService.findFirstPendingOtpThatOpensDocument("tenant-1", "app-1", "doc-1"))
                 .thenReturn(Optional.of(new com.credvenn.lm.application.ApplicationStatementOtpService.ResolvedOtp("otp-1", "123456", "****56")));
         when(context.statementAnalysisRepository.existsByApplicationIdAndStatusIn(anyString(), any())).thenReturn(false);
@@ -166,6 +164,9 @@ class StatementAnalysisServiceTest {
 
         context.service.run("tenant-1", "app-1", "doc-1", "officer", null);
 
+        ArgumentCaptor<StatementAnalysis> analysisCaptor = ArgumentCaptor.forClass(StatementAnalysis.class);
+        verify(context.statementAnalysisRepository).save(analysisCaptor.capture());
+        assertEquals("CLADFY", analysisCaptor.getValue().getProvider());
         ArgumentCaptor<StatementAnalysisRequestedEvent> eventCaptor = ArgumentCaptor.forClass(StatementAnalysisRequestedEvent.class);
         verify(context.applicationEventPublisher).publishEvent(eventCaptor.capture());
         StatementAnalysisRequestedEvent event = eventCaptor.getValue();

@@ -45,6 +45,7 @@ public class TenantService {
         tenant.setStatementAnalysisMode(request.statementAnalysisMode() == null
                 ? TenantStatementAnalysisMode.AUTO
                 : request.statementAnalysisMode());
+        tenant.setStatementProvider(request.statementProvider() == null ? TenantStatementProvider.CLADFY : request.statementProvider());
         tenant = tenantRepository.save(tenant);
 
         roleTemplateService.provisionTenantRoles(tenant.getId());
@@ -104,6 +105,13 @@ public class TenantService {
         return tenant;
     }
 
+    @Transactional
+    public TenantDtos.TenantResponse updateStatementProvider(String tenantId, TenantDtos.UpdateTenantStatementProviderRequest request) {
+        Tenant tenant = getRequiredTenant(tenantId);
+        tenant.setStatementProvider(request.statementProvider());
+        return toResponse(tenant);
+    }
+
     public Tenant getRequiredTenant(String tenantId) {
         return tenantRepository.findById(tenantId).orElseThrow(() -> new NotFoundException("Tenant not found"));
     }
@@ -117,6 +125,7 @@ public class TenantService {
                 tenant.isActive(),
                 tenant.getKycMode(),
                 tenant.getStatementAnalysisMode(),
+                tenant.getStatementProvider(),
                 tenant.getCreatedAt(),
                 tenant.getUpdatedAt());
     }

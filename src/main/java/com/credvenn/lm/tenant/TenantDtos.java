@@ -21,6 +21,7 @@ public final class TenantDtos {
             @NotBlank @Size(max = 100) String fineractTenantId,
             TenantKycMode kycMode,
             TenantStatementAnalysisMode statementAnalysisMode,
+            TenantStatementProvider statementProvider,
             @NotNull @Valid InitialAdminRequest initialAdmin) {
     }
 
@@ -43,6 +44,9 @@ public final class TenantDtos {
     public record UpdateTenantStatementAnalysisModeRequest(@NotNull TenantStatementAnalysisMode statementAnalysisMode) {
     }
 
+    public record UpdateTenantStatementProviderRequest(@NotNull TenantStatementProvider statementProvider) {
+    }
+
     @Schema(name = "TenantResponse")
     public record TenantResponse(
             String id,
@@ -52,6 +56,7 @@ public final class TenantDtos {
             boolean active,
             TenantKycMode kycMode,
             TenantStatementAnalysisMode statementAnalysisMode,
+            TenantStatementProvider statementProvider,
             Instant createdAt,
             Instant updatedAt) {
     }

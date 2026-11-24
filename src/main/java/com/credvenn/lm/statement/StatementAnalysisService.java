@@ -73,7 +73,15 @@ public class StatementAnalysisService {
             if (!document.getApplicationId().equals(applicationId)) {
                 throw new NotFoundException("Document does not belong to the loan request application");
             }
-            assertStatementOtpReadyForSubmission(tenantId, applicationId, documentId, simulateOutcome);
+            String providerCode = normalizeSimulateOutcome(simulateOutcome) == null
+                    ? statementProviderRegistry.providerForTenant(tenantId) : "SIMULATED";
+            if (!"SIMULATED".equals(providerCode)) {
+                statementProviderRegistry.byCode(providerCode);
+            }
+            if ("CLADFY".equals(providerCode)
+                    && applicationStatementOtpService.findFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId).isEmpty()) {
+                throw new BadRequestException("No pending statement OTP can open the statement document");
+            }
             if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
                     StatementAnalysisStatus.PENDING,
                     StatementAnalysisStatus.IN_PROGRESS))) {
@@ -84,7 +92,7 @@ public class StatementAnalysisService {
             analysis.setTenantId(tenantId);
             analysis.setApplicationId(applicationId);
             analysis.setSourceDocumentId(documentId);
-            analysis.setProvider(normalizeSimulateOutcome(simulateOutcome) == null ? "QUEUED" : "SIMULATED");
+            analysis.setProvider(providerCode);
             analysis.setStatus(StatementAnalysisStatus.PENDING);
             analysis = statementAnalysisRepository.save(analysis);
             log.info("Queued statement analysis for documentId={}", documentId);
@@ -208,14 +216,8 @@ public class StatementAnalysisService {
         };
     }
 
-    private void assertStatementOtpReadyForSubmission(String tenantId, String applicationId, String documentId, String simulateOutcome) {
-        if (!isStatementOtpReadyForSubmission(tenantId, applicationId, documentId, simulateOutcome)) {
-            throw new BadRequestException("No pending statement OTP can open the statement document");
-        }
-    }
-
     private boolean isStatementOtpReadyForSubmission(String tenantId, String applicationId, String documentId, String simulateOutcome) {
-        if (normalizeSimulateOutcome(simulateOutcome) != null || !requiresStatementOtp()) {
+        if (normalizeSimulateOutcome(simulateOutcome) != null || !requiresStatementOtp(tenantId)) {
             return true;
         }
         return applicationStatementOtpService.findFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId).isPresent();
@@ -368,8 +370,8 @@ public class StatementAnalysisService {
         return trimmed.isEmpty() ? defaultValue : trimmed;
     }
 
-    private boolean requiresStatementOtp() {
-        return "CLADFY".equalsIgnoreCase(statementProviderRegistry.currentProvider().providerCode());
+    private boolean requiresStatementOtp(String tenantId) {
+        return "CLADFY".equalsIgnoreCase(statementProviderRegistry.providerForTenant(tenantId));
     }
 
     record StoredAnalysisResponse(
