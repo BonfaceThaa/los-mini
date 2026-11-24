@@ -82,7 +82,7 @@ public class StatementAnalysisService {
                     && applicationStatementOtpService.findFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId).isEmpty()) {
                 throw new BadRequestException("No pending statement OTP can open the statement document");
             }
-            if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
+            if (statementAnalysisRepository.existsByTenantIdAndApplicationIdAndStatusIn(tenantId, applicationId, Set.of(
                     StatementAnalysisStatus.PENDING,
                     StatementAnalysisStatus.IN_PROGRESS))) {
                 log.info("Skipping statement analysis run because an analysis is already pending/in progress");
@@ -103,7 +103,7 @@ public class StatementAnalysisService {
                     analysis.getId(),
                     actor,
                     simulateOutcome));
-            return buildResponse(applicationId, Optional.of(analysis));
+            return buildResponse(tenantId, applicationId, Optional.of(analysis));
         }
     }
 
@@ -115,13 +115,13 @@ public class StatementAnalysisService {
                 log.info("Skipping statement analysis retry because application status={} is past statement processing", application.getStatus());
                 return false;
             }
-            if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
+            if (statementAnalysisRepository.existsByTenantIdAndApplicationIdAndStatusIn(tenantId, applicationId, Set.of(
                     StatementAnalysisStatus.PENDING,
                     StatementAnalysisStatus.IN_PROGRESS))) {
                 log.info("Skipping statement analysis retry because an analysis is already pending/in progress");
                 return false;
             }
-            Optional<StatementAnalysis> latestAnalysis = getLatestProviderAnalysis(applicationId);
+            Optional<StatementAnalysis> latestAnalysis = getLatestProviderAnalysis(tenantId, applicationId);
             if (latestAnalysis.isPresent() && latestAnalysis.get().getStatus() == StatementAnalysisStatus.PASSED) {
                 log.info("Skipping statement analysis retry because latest provider analysis already passed");
                 return false;
@@ -144,15 +144,15 @@ public class StatementAnalysisService {
             StatementDtos.ManualStatementPassRequest request) {
         try (LoggingContext.Scope ignored = LoggingContext.withTenantAndApplication(tenantId, applicationId)) {
             applicationService.getRequired(tenantId, applicationId);
-            if (statementAnalysisRepository.existsByApplicationIdAndStatusIn(applicationId, Set.of(
+            if (statementAnalysisRepository.existsByTenantIdAndApplicationIdAndStatusIn(tenantId, applicationId, Set.of(
                     StatementAnalysisStatus.PENDING,
                     StatementAnalysisStatus.IN_PROGRESS))) {
                 throw new BadRequestException("A statement analysis is already pending or in progress");
             }
-            Optional<StatementAnalysis> latestAnalysis = getLatestProviderAnalysis(applicationId);
+            Optional<StatementAnalysis> latestAnalysis = getLatestProviderAnalysis(tenantId, applicationId);
             if (latestAnalysis.isPresent() && latestAnalysis.get().getStatus() == StatementAnalysisStatus.PASSED) {
                 log.info("Skipping manual statement pass because latest provider statement analysis is already passed");
-                return buildResponse(applicationId, latestAnalysis);
+                return buildResponse(tenantId, applicationId, latestAnalysis);
             }
             String reason = trimToDefault(request.summary(), "Manually approved after statement review");
             statementReviewService.recordDecision(
@@ -165,19 +165,19 @@ public class StatementAnalysisService {
                     reason);
             log.info("Recorded manual statement approval without overwriting provider analysis");
             applicationService.handleStatementPassed(tenantId, applicationId, actor);
-            return buildResponse(applicationId, latestAnalysis);
+            return buildResponse(tenantId, applicationId, latestAnalysis);
         }
     }
 
     @Transactional(readOnly = true)
     public StatementDtos.StatementAssessmentResponse get(String tenantId, String applicationId) {
         applicationService.getRequired(tenantId, applicationId);
-        return buildResponse(applicationId, Optional.empty());
+        return buildResponse(tenantId, applicationId, Optional.empty());
     }
 
-    private StatementDtos.StatementAssessmentResponse buildResponse(String applicationId, Optional<StatementAnalysis> analysisOverride) {
-        StatementAnalysis analysis = analysisOverride.orElseGet(() -> getLatestProviderAnalysis(applicationId).orElse(null));
-        StatementReview review = resolveReview(applicationId, analysis).orElse(null);
+    private StatementDtos.StatementAssessmentResponse buildResponse(String tenantId, String applicationId, Optional<StatementAnalysis> analysisOverride) {
+        StatementAnalysis analysis = analysisOverride.orElseGet(() -> getLatestProviderAnalysis(tenantId, applicationId).orElse(null));
+        StatementReview review = resolveReview(tenantId, applicationId, analysis).orElse(null);
         if (analysis == null && review == null) {
             throw new NotFoundException("Statement analysis not found");
         }
@@ -187,8 +187,8 @@ public class StatementAnalysisService {
                 effectiveOutcome(analysis, review));
     }
 
-    private Optional<StatementAnalysis> getLatestProviderAnalysis(String applicationId) {
-        return statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc(applicationId).stream()
+    private Optional<StatementAnalysis> getLatestProviderAnalysis(String tenantId, String applicationId) {
+        return statementAnalysisRepository.findAllByTenantIdAndApplicationIdOrderByCreatedAtDesc(tenantId, applicationId).stream()
                 .filter(analysis -> !LEGACY_MANUAL_OVERRIDE_PROVIDER.equalsIgnoreCase(analysis.getProvider()))
                 .findFirst();
     }
@@ -223,13 +223,13 @@ public class StatementAnalysisService {
         return applicationStatementOtpService.findFirstPendingOtpThatOpensDocument(tenantId, applicationId, documentId).isPresent();
     }
 
-    private Optional<StatementReview> resolveReview(String applicationId, StatementAnalysis analysis) {
+    private Optional<StatementReview> resolveReview(String tenantId, String applicationId, StatementAnalysis analysis) {
         if (analysis != null) {
-            Optional<StatementReview> reviewForAnalysis = statementReviewService.getLatestForAnalysis(analysis.getId());
+            Optional<StatementReview> reviewForAnalysis = statementReviewService.getLatestForAnalysis(tenantId, analysis.getId());
             if (reviewForAnalysis.isPresent()) {
                 return reviewForAnalysis;
             }
-            Optional<StatementReview> latestForApplication = statementReviewService.getLatestForApplication(applicationId);
+            Optional<StatementReview> latestForApplication = statementReviewService.getLatestForApplication(tenantId, applicationId);
             if (latestForApplication.isPresent()) {
                 StatementReview review = latestForApplication.get();
                 if ((review.getStatementAnalysisId() == null || review.getStatementAnalysisId().isBlank())
@@ -239,7 +239,7 @@ public class StatementAnalysisService {
             }
             return Optional.empty();
         }
-        return statementReviewService.getLatestForApplication(applicationId);
+        return statementReviewService.getLatestForApplication(tenantId, applicationId);
     }
 
     StatementDtos.StatementProviderAnalysisResponse toAnalysisResponse(StatementAnalysis analysis) {
@@ -348,6 +348,7 @@ public class StatementAnalysisService {
         return switch (analysis.getStatus()) {
             case PENDING -> StatementEffectiveOutcome.PENDING;
             case IN_PROGRESS -> StatementEffectiveOutcome.IN_PROGRESS;
+            case PROCESSING_FAILED -> StatementEffectiveOutcome.PROCESSING_FAILED;
             case PASSED -> StatementEffectiveOutcome.APPROVED;
             case FAILED -> StatementEffectiveOutcome.REJECTED;
             case MANUAL_REVIEW_REQUIRED -> StatementEffectiveOutcome.MANUAL_REVIEW_REQUIRED;

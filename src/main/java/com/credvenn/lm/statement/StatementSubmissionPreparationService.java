@@ -48,6 +48,11 @@ public class StatementSubmissionPreparationService {
         if (!analysis.getApplicationId().equals(document.getApplicationId())) {
             throw new BadRequestException("Document does not belong to the loan request application");
         }
+        if ("INTERNAL_MPESA".equals(analysis.getProvider())
+                && analysis.getStatus() != StatementAnalysisStatus.PENDING
+                && analysis.getStatus() != StatementAnalysisStatus.IN_PROGRESS) {
+            return PreparedSubmission.completed(analysis, application, document);
+        }
         if (analysis.getExternalDocumentId() != null && !analysis.getExternalDocumentId().isBlank()) {
             return PreparedSubmission.completed(analysis, application, document);
         }

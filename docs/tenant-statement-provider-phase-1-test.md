@@ -1,5 +1,7 @@
 # Tenant statement provider: phase 1 manual test
 
+> Historical phase 1 behavior: phase 3 implements the internal provider, so the unavailable-provider expectation in step 6 no longer applies. Use `statement-analyzer-phase-3-test.md` for the current flow.
+
 Phase 1 stores a provider per tenant and snapshots it on new analyses. `INTERNAL_MPESA` can be selected but cannot process statements until the analyzer is integrated in a later phase. Attempting to start a non-simulated analysis for it returns a provider-not-available error before creating an analysis. Cladfy credentials and an eligible application with an uploaded M-Pesa statement and valid statement OTP are needed to exercise the Cladfy flow.
 
 1. Start the application against a migrated test database. Flyway migration V41 assigns `CLADFY` to existing tenants. Authenticate as a platform administrator with `TENANT_CREATE`, `TENANT_VIEW_ALL`, and `TENANT_MANAGE_ALL`.

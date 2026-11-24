@@ -105,7 +105,7 @@ public class StatementSubmissionCompletionService {
             case PASSED -> StatementReviewDecision.APPROVED;
             case FAILED -> StatementReviewDecision.REJECTED;
             case MANUAL_REVIEW_REQUIRED -> StatementReviewDecision.MANUAL_REVIEW_REQUIRED;
-            case PENDING, IN_PROGRESS -> throw new IllegalArgumentException(
+            case PENDING, IN_PROGRESS, PROCESSING_FAILED -> throw new IllegalArgumentException(
                     "Cannot record review decision for non-final status " + status);
         };
     }

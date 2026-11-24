@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.credvenn.lm.application.ApplicationStatementOtpService;
@@ -75,6 +76,21 @@ class StatementAnalysisProcessingServiceTest {
         verify(context.completion).completeDecision("tenant-1", "analysis-1", "system", decision, true);
     }
 
+    @Test
+    void processRoutesSnapshottedInternalProviderToInternalProcessing() {
+        TestContext context = new TestContext();
+        var analysis = new StatementAnalysis();
+        analysis.setProvider("INTERNAL_MPESA");
+        when(context.repository.findByIdAndTenantId("analysis-1", "tenant-1")).thenReturn(Optional.of(analysis));
+        var provider = new InternalMpesaStatementAnalysisProvider();
+        when(context.registry.byCode("INTERNAL_MPESA")).thenReturn(provider);
+        var work = work(false);
+        when(context.preparation.prepare("tenant-1", "analysis-1", "system", "INTERNAL_MPESA", false)).thenReturn(work);
+        context.service.process("tenant-1", "analysis-1", "system", null);
+        verify(context.internalProcessing).process(work, "system");
+        verifyNoInteractions(context.completion);
+    }
+
     private static StatementSubmissionPreparationService.PreparedSubmission work(boolean recoveryAttempt) {
         LoanRequestApplication application = new LoanRequestApplication();
         application.setTenantId("tenant-1");
@@ -106,8 +122,9 @@ class StatementAnalysisProcessingServiceTest {
         private final StatementSubmissionPreparationService preparation = mock(StatementSubmissionPreparationService.class);
         private final StatementSubmissionCompletionService completion = mock(StatementSubmissionCompletionService.class);
         private final StatementAnalysisRepository repository = mock(StatementAnalysisRepository.class);
+        private final InternalMpesaProcessingService internalProcessing = mock(InternalMpesaProcessingService.class);
         private final StatementAnalysisProcessingService service = new StatementAnalysisProcessingService(
-                registry, preparation, completion, repository);
+                registry, preparation, completion, repository, internalProcessing);
 
         private TestContext() {
             StatementAnalysis analysis = new StatementAnalysis();

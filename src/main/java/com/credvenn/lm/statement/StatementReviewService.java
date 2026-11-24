@@ -36,16 +36,16 @@ public class StatementReviewService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<StatementReview> getLatestForAnalysis(String statementAnalysisId) {
+    public Optional<StatementReview> getLatestForAnalysis(String tenantId, String statementAnalysisId) {
         if (statementAnalysisId == null || statementAnalysisId.isBlank()) {
             return Optional.empty();
         }
-        return statementReviewRepository.findFirstByStatementAnalysisIdOrderByCreatedAtDesc(statementAnalysisId);
+        return statementReviewRepository.findFirstByTenantIdAndStatementAnalysisIdOrderByCreatedAtDesc(tenantId, statementAnalysisId);
     }
 
     @Transactional(readOnly = true)
-    public Optional<StatementReview> getLatestForApplication(String applicationId) {
-        return statementReviewRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId);
+    public Optional<StatementReview> getLatestForApplication(String tenantId, String applicationId) {
+        return statementReviewRepository.findFirstByTenantIdAndApplicationIdOrderByCreatedAtDesc(tenantId, applicationId);
     }
 
     private String trimToNull(String value) {

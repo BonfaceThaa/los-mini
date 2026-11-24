@@ -10,4 +10,6 @@ public interface StatementReviewRepository extends JpaRepository<StatementReview
     Optional<StatementReview> findFirstByTenantIdAndApplicationIdOrderByCreatedAtDesc(String tenantId, String applicationId);
 
     Optional<StatementReview> findFirstByStatementAnalysisIdOrderByCreatedAtDesc(String statementAnalysisId);
+
+    Optional<StatementReview> findFirstByTenantIdAndStatementAnalysisIdOrderByCreatedAtDesc(String tenantId, String statementAnalysisId);
 }

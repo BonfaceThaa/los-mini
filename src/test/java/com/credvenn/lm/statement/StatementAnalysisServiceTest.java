@@ -60,8 +60,8 @@ class StatementAnalysisServiceTest {
                 Instant.parse("2026-07-02T10:00:00Z"));
 
         when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application);
-        when(context.statementAnalysisRepository.existsByApplicationIdAndStatusIn(anyString(), any())).thenReturn(false);
-        when(context.statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc("app-1")).thenReturn(List.of(failedAnalysis));
+        when(context.statementAnalysisRepository.existsByTenantIdAndApplicationIdAndStatusIn(anyString(), anyString(), any())).thenReturn(false);
+        when(context.statementAnalysisRepository.findAllByTenantIdAndApplicationIdOrderByCreatedAtDesc("tenant-1", "app-1")).thenReturn(List.of(failedAnalysis));
         when(context.statementReviewService.recordDecision(
                 "tenant-1",
                 "app-1",
@@ -70,7 +70,7 @@ class StatementAnalysisServiceTest {
                 StatementReviewSource.USER,
                 "officer",
                 "approved after branch review")).thenReturn(review);
-        when(context.statementReviewService.getLatestForAnalysis("analysis-1")).thenReturn(Optional.of(review));
+        when(context.statementReviewService.getLatestForAnalysis("tenant-1", "analysis-1")).thenReturn(Optional.of(review));
         when(context.transactionRepository.findAllByStatementAnalysisIdOrderByCreatedAtAsc("analysis-1")).thenReturn(List.of());
         doNothing().when(context.applicationService).handleStatementPassed("tenant-1", "app-1", "officer");
 
@@ -155,7 +155,7 @@ class StatementAnalysisServiceTest {
         when(context.statementProviderRegistry.providerForTenant("tenant-1")).thenReturn("CLADFY");
         when(context.applicationStatementOtpService.findFirstPendingOtpThatOpensDocument("tenant-1", "app-1", "doc-1"))
                 .thenReturn(Optional.of(new com.credvenn.lm.application.ApplicationStatementOtpService.ResolvedOtp("otp-1", "123456", "****56")));
-        when(context.statementAnalysisRepository.existsByApplicationIdAndStatusIn(anyString(), any())).thenReturn(false);
+        when(context.statementAnalysisRepository.existsByTenantIdAndApplicationIdAndStatusIn(anyString(), anyString(), any())).thenReturn(false);
         when(context.statementAnalysisRepository.save(any(StatementAnalysis.class))).thenAnswer(invocation -> {
             StatementAnalysis analysis = invocation.getArgument(0);
             setField(analysis, StatementAnalysis.class, "id", "analysis-1");
@@ -192,8 +192,8 @@ class StatementAnalysisServiceTest {
                 Instant.parse("2026-07-02T11:00:00Z"));
 
         when(context.applicationService.getRequired("tenant-1", "app-2")).thenReturn(application);
-        when(context.statementAnalysisRepository.findAllByApplicationIdOrderByCreatedAtDesc("app-2")).thenReturn(List.of());
-        when(context.statementReviewService.getLatestForApplication("app-2")).thenReturn(Optional.of(review));
+        when(context.statementAnalysisRepository.findAllByTenantIdAndApplicationIdOrderByCreatedAtDesc("tenant-1", "app-2")).thenReturn(List.of());
+        when(context.statementReviewService.getLatestForApplication("tenant-1", "app-2")).thenReturn(Optional.of(review));
 
         StatementDtos.StatementAssessmentResponse response = context.service.get("tenant-1", "app-2");
 

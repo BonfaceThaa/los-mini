@@ -23,16 +23,19 @@ public class StatementAnalysisProcessingService {
     private final StatementSubmissionPreparationService preparationService;
     private final StatementSubmissionCompletionService completionService;
     private final StatementAnalysisRepository analysisRepository;
+    private final InternalMpesaProcessingService internalProcessingService;
 
     public StatementAnalysisProcessingService(
             StatementProviderRegistry statementProviderRegistry,
             StatementSubmissionPreparationService preparationService,
             StatementSubmissionCompletionService completionService,
-            StatementAnalysisRepository analysisRepository) {
+            StatementAnalysisRepository analysisRepository,
+            InternalMpesaProcessingService internalProcessingService) {
         this.statementProviderRegistry = statementProviderRegistry;
         this.preparationService = preparationService;
         this.completionService = completionService;
         this.analysisRepository = analysisRepository;
+        this.internalProcessingService = internalProcessingService;
     }
 
     @Async
@@ -62,6 +65,10 @@ public class StatementAnalysisProcessingService {
             }
             if (simulatedDecision != null) {
                 completionService.completeDecision(tenantId, analysisId, actor, simulatedDecision, false);
+                return;
+            }
+            if (provider instanceof InternalMpesaStatementAnalysisProvider) {
+                internalProcessingService.process(work, actor);
                 return;
             }
             if (!asynchronousSubmission) {

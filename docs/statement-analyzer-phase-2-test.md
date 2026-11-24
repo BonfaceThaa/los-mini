@@ -1,6 +1,8 @@
 # Internal statement analyzer: phase 2 verification
 
-Phase 2 includes the standalone analyzer core and synthetic fixtures in the LOS build. It does not add an HTTP endpoint or connect the core to the tenant statement workflow. Selecting `INTERNAL_MPESA` still reports that the provider is unavailable until phase 3.
+> Phase 3 connects this core to the tenant workflow. Use `statement-analyzer-phase-3-test.md` to test the application flow.
+
+Phase 2 added the standalone analyzer core and synthetic fixtures to the LOS build. Phase 3 connects it to the tenant statement workflow.
 
 From the repository root, using Java 21 and Maven, run:
 
