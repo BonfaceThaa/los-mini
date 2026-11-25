@@ -20,4 +20,4 @@ Run the focused tests with Java 21 and Maven:
 .\mvnw.cmd clean test "-Dtest=InternalStatementResultMapperTest,StatementAnalysisResponseApiTest,InternalMpesaCompletionServiceTest,InternalMpesaProcessingServiceTest,StatementAnalysisServiceTest,StatementAnalysisProcessingServiceTest,CladfyStatusPollingServiceTest"
 ```
 
-The general H2 context test has pre-existing configuration limitations described in the phase 3 guide; a configured MariaDB environment is needed for an end-to-end HTTP check. Billing and durable job recovery remain later phases.
+The general H2 context test has pre-existing configuration limitations described in the phase 3 guide; a configured MariaDB environment is needed for an end-to-end HTTP check. See the phase 6 guide for billing. Durable job recovery remains a later phase.

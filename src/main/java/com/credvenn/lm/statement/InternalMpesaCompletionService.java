@@ -6,6 +6,7 @@ import com.credvenn.lm.common.exception.NotFoundException;
 import com.credvenn.stmt.analyzer.core.AnalysisResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.credvenn.lm.subscription.InternalStatementBillingService;
 import java.time.Instant;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,19 +18,23 @@ public class InternalMpesaCompletionService {
     private final ApplicationService applications;
     private final ApplicationStatementOtpService otps;
     private final ObjectMapper json;
+    private final InternalStatementBillingService billing;
 
     public InternalMpesaCompletionService(StatementAnalysisRepository repository, StatementReviewService reviews,
-            ApplicationService applications, ApplicationStatementOtpService otps, ObjectMapper json) {
+            ApplicationService applications, ApplicationStatementOtpService otps, ObjectMapper json,
+            InternalStatementBillingService billing) {
         this.repository = repository;
         this.reviews = reviews;
         this.applications = applications;
         this.otps = otps;
         this.json = json;
+        this.billing = billing;
     }
 
     @Transactional
     public void complete(String tenantId, String analysisId, String actor, AnalysisResult result, String otpId) {
-        StatementAnalysis analysis = getForUpdate(tenantId, analysisId);
+        var billingWork = billing.lockForAnalysis(tenantId, analysisId);
+        StatementAnalysis analysis = billingWork.analysis();
         if (analysis.getStatus() != StatementAnalysisStatus.IN_PROGRESS) return;
         try {
             analysis.setRawProviderResponse(json.writeValueAsString(result));
@@ -43,6 +48,7 @@ public class InternalMpesaCompletionService {
             markFailed(analysis, actor, "NO_TRANSACTIONS_EXTRACTED");
             return;
         }
+        billing.charge(billingWork, actor);
         analysis.setStatus(StatementAnalysisStatus.MANUAL_REVIEW_REQUIRED);
         analysis.setRecommendation("REVIEW");
         analysis.setSummary("Statement extracted; manual review required");
@@ -68,6 +74,7 @@ public class InternalMpesaCompletionService {
 
     private void markFailed(StatementAnalysis analysis, String actor, String code) {
         analysis.setStatus(StatementAnalysisStatus.PROCESSING_FAILED);
+        analysis.setBillingStatus(null);
         analysis.setProviderStatus(code);
         analysis.setRecommendation(null);
         analysis.setSummary("Statement processing failed: " + code);

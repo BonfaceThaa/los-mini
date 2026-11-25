@@ -1,6 +1,7 @@
 package com.credvenn.lm.statement;
 
 import com.credvenn.lm.common.exception.BadRequestException;
+import com.credvenn.lm.common.exception.ForbiddenOperationException;
 import com.credvenn.lm.tenant.TenantService;
 import com.credvenn.lm.tenant.TenantStatementAnalysisMode;
 import java.util.Locale;
@@ -66,7 +67,7 @@ public class StatementAutoTriggerListener {
                     event.documentId(),
                     event.documentType());
             statementAnalysisService.run(event.tenantId(), event.applicationId(), event.documentId(), event.actor(), null);
-        } catch (BadRequestException ex) {
+        } catch (BadRequestException | ForbiddenOperationException ex) {
             log.info(
                     "Skipping auto-trigger for applicationId={} documentId={} because {}",
                     event.applicationId(),

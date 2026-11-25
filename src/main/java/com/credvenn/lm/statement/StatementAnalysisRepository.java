@@ -33,6 +33,23 @@ public interface StatementAnalysisRepository extends JpaRepository<StatementAnal
 
     boolean existsByTenantIdAndApplicationIdAndStatusIn(String tenantId, String applicationId, java.util.Collection<StatementAnalysisStatus> statuses);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select a from StatementAnalysis a
+            where a.tenantId = :tenantId and a.billingSubscriptionId = :subscriptionId
+              and (a.status in :statuses or a.billingStatus in
+                   (com.credvenn.lm.subscription.StatementBillingStatus.PENDING_FUNDS,
+                    com.credvenn.lm.subscription.StatementBillingStatus.CURRENCY_MISMATCH))
+              and a.billingAmount is not null
+              and (a.billingStatus is null or a.billingStatus not in
+                   (com.credvenn.lm.subscription.StatementBillingStatus.CHARGED,
+                    com.credvenn.lm.subscription.StatementBillingStatus.WAIVED,
+                    com.credvenn.lm.subscription.StatementBillingStatus.WAIVER_RESERVED))
+            """)
+    List<StatementAnalysis> findOutstandingForUpdate(@Param("tenantId") String tenantId,
+            @Param("subscriptionId") String subscriptionId,
+            @Param("statuses") java.util.Collection<StatementAnalysisStatus> statuses);
+
     Optional<StatementAnalysis> findByExternalClientIdAndExternalDocumentId(String externalClientId, String externalDocumentId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

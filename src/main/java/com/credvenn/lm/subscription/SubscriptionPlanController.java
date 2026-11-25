@@ -55,6 +55,14 @@ public class SubscriptionPlanController {
         return ResponseEntity.ok(subscriptionPlanService.getById(planId));
     }
 
+    @PutMapping("/{planId}/statement-policy")
+    @PreAuthorize("hasAuthority('SUBSCRIPTION_PLAN_MANAGE')")
+    @Operation(summary = "Set statement analysis policy defaults for a plan")
+    public ResponseEntity<SubscriptionDtos.SubscriptionPlanResponse> updateStatementPolicy(
+            @PathVariable String planId, @Valid @RequestBody SubscriptionDtos.StatementPlanPolicyRequest request) {
+        return ResponseEntity.ok(subscriptionPlanService.updateStatementPolicy(planId, request));
+    }
+
     @GetMapping
     @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_VIEW') or hasAuthority('SUBSCRIPTION_PLAN_MANAGE')")
     @Operation(summary = "List platform subscription plans")

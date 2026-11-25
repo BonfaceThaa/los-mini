@@ -68,6 +68,14 @@ public final class SubscriptionDtos {
     public record UpdateSubscriptionNotesRequest(@Size(max = 1000) String operationalNotes) {
     }
 
+    @Schema(name = "StatementPlanPolicyRequest")
+    public record StatementPlanPolicyRequest(@NotNull Boolean allowNegative,
+            @NotNull StatementRepeatChargePolicy repeatPolicy) { }
+
+    @Schema(name = "StatementSubscriptionPolicyRequest", description = "Null values inherit the current plan default")
+    public record StatementSubscriptionPolicyRequest(Boolean allowNegativeOverride,
+            StatementRepeatChargePolicy repeatPolicyOverride) { }
+
     @Schema(name = "SubscriptionPlanResponse")
     public record SubscriptionPlanResponse(
             String id,
@@ -87,7 +95,9 @@ public final class SubscriptionDtos {
             String createdBy,
             String updatedBy,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            boolean statementAllowNegative,
+            StatementRepeatChargePolicy statementRepeatPolicy) {
     }
 
     @Schema(name = "TenantSubscriptionResponse")
@@ -111,7 +121,11 @@ public final class SubscriptionDtos {
             String createdBy,
             String updatedBy,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            Boolean statementAllowNegativeOverride,
+            StatementRepeatChargePolicy statementRepeatPolicyOverride,
+            boolean effectiveStatementAllowNegative,
+            StatementRepeatChargePolicy effectiveStatementRepeatPolicy) {
     }
 
     @Schema(name = "SubscriptionUsageResponse")

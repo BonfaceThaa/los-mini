@@ -63,7 +63,8 @@ public final class StatementDtos {
             @JsonInclude(JsonInclude.Include.NON_NULL) MonthlySummaryResponse monthlySummary,
             @JsonInclude(JsonInclude.Include.NON_NULL) List<MonthlyMetricResponse> monthlyMetrics,
             @JsonInclude(JsonInclude.Include.NON_NULL) CategorySummaryResponse categories,
-            @JsonInclude(JsonInclude.Include.NON_NULL) StatementQualityResponse quality) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) StatementQualityResponse quality,
+            @JsonInclude(JsonInclude.Include.NON_NULL) com.credvenn.lm.subscription.StatementBillingStatus billingStatus) {
     }
 
     public record StatementSummaryResponse(String currency, LocalDate periodStart, LocalDate periodEnd,

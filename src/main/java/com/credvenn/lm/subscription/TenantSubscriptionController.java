@@ -29,16 +29,19 @@ public class TenantSubscriptionController {
     private final SubscriptionUsageService subscriptionUsageService;
     private final SubscriptionBillingService subscriptionBillingService;
     private final CurrentActorService currentActorService;
+    private final InternalStatementBillingService internalStatementBillingService;
 
     public TenantSubscriptionController(
             TenantSubscriptionService tenantSubscriptionService,
             SubscriptionUsageService subscriptionUsageService,
             SubscriptionBillingService subscriptionBillingService,
-            CurrentActorService currentActorService) {
+            CurrentActorService currentActorService,
+            InternalStatementBillingService internalStatementBillingService) {
         this.tenantSubscriptionService = tenantSubscriptionService;
         this.subscriptionUsageService = subscriptionUsageService;
         this.subscriptionBillingService = subscriptionBillingService;
         this.currentActorService = currentActorService;
+        this.internalStatementBillingService = internalStatementBillingService;
     }
 
     @PostMapping
@@ -72,6 +75,15 @@ public class TenantSubscriptionController {
         return ResponseEntity.ok(tenantSubscriptionService.updateNotes(tenantId, subscriptionId, request));
     }
 
+    @PutMapping("/{subscriptionId}/statement-policy")
+    @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
+    @Operation(summary = "Set or clear tenant statement analysis policy overrides")
+    public ResponseEntity<SubscriptionDtos.TenantSubscriptionResponse> updateStatementPolicy(
+            @PathVariable String tenantId, @PathVariable String subscriptionId,
+            @Valid @RequestBody SubscriptionDtos.StatementSubscriptionPolicyRequest request) {
+        return ResponseEntity.ok(tenantSubscriptionService.updateStatementPolicy(tenantId, subscriptionId, request));
+    }
+
     @GetMapping("/current")
     @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_VIEW') or hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
     @Operation(summary = "Get the current active subscription for a tenant")
@@ -100,6 +112,14 @@ public class TenantSubscriptionController {
         return ResponseEntity.ok(subscriptionBillingService.listCurrentLedger(tenantId));
     }
 
+    @GetMapping("/{subscriptionId}/ledger")
+    @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_VIEW') or hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
+    @Operation(summary = "Get ledger entries for a tenant subscription, including an inactive subscription")
+    public ResponseEntity<List<SubscriptionDtos.TenantSubscriptionLedgerResponse>> getLedger(
+            @PathVariable String tenantId, @PathVariable String subscriptionId) {
+        return ResponseEntity.ok(subscriptionBillingService.listLedger(tenantId, subscriptionId));
+    }
+
     @PostMapping("/{subscriptionId}/top-ups")
     @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
     @Operation(summary = "Credit prepaid balance for a tenant subscription")
@@ -116,4 +136,16 @@ public class TenantSubscriptionController {
                 actor);
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/{subscriptionId}/statement-billing/{analysisId}/retry")
+    @PreAuthorize("hasAuthority('TENANT_SUBSCRIPTION_MANAGE')")
+    @Operation(summary = "Retry a pending internal statement analysis charge")
+    public ResponseEntity<StatementBillingRetryResponse> retryStatementBilling(@PathVariable String tenantId,
+            @PathVariable String subscriptionId, @PathVariable String analysisId) {
+        var status = internalStatementBillingService.retry(tenantId, subscriptionId, analysisId,
+                currentActorService.requireCurrentUser().username());
+        return ResponseEntity.ok(new StatementBillingRetryResponse(analysisId, status));
+    }
+
+    public record StatementBillingRetryResponse(String analysisId, StatementBillingStatus billingStatus) { }
 }

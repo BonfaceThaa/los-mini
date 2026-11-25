@@ -76,6 +76,15 @@ public class SubscriptionPlanService {
                 .orElseThrow(() -> new NotFoundException("Subscription plan not found"));
     }
 
+    @Transactional
+    public SubscriptionDtos.SubscriptionPlanResponse updateStatementPolicy(String planId, SubscriptionDtos.StatementPlanPolicyRequest request) {
+        SubscriptionPlan plan = getRequiredEntity(planId);
+        plan.setStatementAllowNegative(request.allowNegative());
+        plan.setStatementRepeatPolicy(request.repeatPolicy());
+        plan.setUpdatedBy(currentActorService.requireCurrentUser().username());
+        return toResponse(plan);
+    }
+
     @Transactional(readOnly = true)
     public SubscriptionDtos.SubscriptionPlanResponse getById(String planId) {
         return toResponse(getRequiredEntity(planId));
@@ -105,6 +114,8 @@ public class SubscriptionPlanService {
                 plan.getCreatedBy(),
                 plan.getUpdatedBy(),
                 plan.getCreatedAt(),
-                plan.getUpdatedAt());
+                plan.getUpdatedAt(),
+                plan.isStatementAllowNegative(),
+                plan.getStatementRepeatPolicy());
     }
 }

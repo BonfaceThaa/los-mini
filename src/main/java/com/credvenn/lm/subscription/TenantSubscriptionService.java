@@ -40,7 +40,7 @@ public class TenantSubscriptionService {
         subscriptionPolicy.validateBillingPeriod(request.currentPeriodStart(), request.currentPeriodEnd());
         String actor = currentActorService.requireCurrentUser().username();
 
-        tenantSubscriptionRepository.findFirstByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, TenantSubscriptionStatus.ACTIVE)
+        tenantSubscriptionRepository.findTopByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, TenantSubscriptionStatus.ACTIVE)
                 .ifPresent(existing -> {
                     existing.setStatus(TenantSubscriptionStatus.CANCELLED);
                     existing.setUpdatedBy(actor);
@@ -77,7 +77,8 @@ public class TenantSubscriptionService {
         SubscriptionPlan plan = subscriptionPlanService.getRequiredEntity(request.subscriptionPlanId());
         subscriptionPolicy.validateBillingPeriod(request.currentPeriodStart(), request.currentPeriodEnd());
         String actor = currentActorService.requireCurrentUser().username();
-        TenantSubscription subscription = getRequiredEntity(tenantId, subscriptionId);
+        TenantSubscription subscription = tenantSubscriptionRepository.findByIdAndTenantIdForUpdate(subscriptionId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Tenant subscription not found"));
         SubscriptionPricingMode scheduledPricingMode = subscription.getNextPricingMode();
         java.time.Instant scheduledEffectiveAt = subscription.getNextPricingModeEffectiveAt();
         if (request.status() == TenantSubscriptionStatus.ACTIVE) {
@@ -87,6 +88,10 @@ public class TenantSubscriptionService {
                         existing.setStatus(TenantSubscriptionStatus.CANCELLED);
                         existing.setUpdatedBy(actor);
                     });
+        }
+        if (!subscription.getSubscriptionPlanId().equals(plan.getId())) {
+            subscription.setStatementAllowNegativeOverride(null);
+            subscription.setStatementRepeatPolicyOverride(null);
         }
         subscription.setSubscriptionPlanId(plan.getId());
         subscription.setCurrentPeriodStart(request.currentPeriodStart());
@@ -111,8 +116,21 @@ public class TenantSubscriptionService {
     @Transactional
     public SubscriptionDtos.TenantSubscriptionResponse updateNotes(String tenantId, String subscriptionId, SubscriptionDtos.UpdateSubscriptionNotesRequest request) {
         assertTenantExists(tenantId);
-        TenantSubscription subscription = getRequiredEntity(tenantId, subscriptionId);
+        TenantSubscription subscription = tenantSubscriptionRepository.findByIdAndTenantIdForUpdate(subscriptionId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Tenant subscription not found"));
         subscription.setOperationalNotes(request.operationalNotes());
+        subscription.setUpdatedBy(currentActorService.requireCurrentUser().username());
+        return toResponse(subscription, subscriptionPlanService.getRequiredEntity(subscription.getSubscriptionPlanId()));
+    }
+
+    @Transactional
+    public SubscriptionDtos.TenantSubscriptionResponse updateStatementPolicy(String tenantId, String subscriptionId,
+            SubscriptionDtos.StatementSubscriptionPolicyRequest request) {
+        assertTenantExists(tenantId);
+        TenantSubscription subscription = tenantSubscriptionRepository.findByIdAndTenantIdForUpdate(subscriptionId, tenantId)
+                .orElseThrow(() -> new NotFoundException("Tenant subscription not found"));
+        subscription.setStatementAllowNegativeOverride(request.allowNegativeOverride());
+        subscription.setStatementRepeatPolicyOverride(request.repeatPolicyOverride());
         subscription.setUpdatedBy(currentActorService.requireCurrentUser().username());
         return toResponse(subscription, subscriptionPlanService.getRequiredEntity(subscription.getSubscriptionPlanId()));
     }
@@ -168,6 +186,10 @@ public class TenantSubscriptionService {
                 subscription.getCreatedBy(),
                 subscription.getUpdatedBy(),
                 subscription.getCreatedAt(),
-                subscription.getUpdatedAt());
+                subscription.getUpdatedAt(),
+                subscription.getStatementAllowNegativeOverride(),
+                subscription.getStatementRepeatPolicyOverride(),
+                StatementSubscriptionEligibilityService.effectiveAllowNegative(subscription, plan),
+                StatementSubscriptionEligibilityService.effectiveRepeatPolicy(subscription, plan));
     }
 }

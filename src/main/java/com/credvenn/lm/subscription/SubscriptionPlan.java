@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -49,6 +51,18 @@ public class SubscriptionPlan extends AuditableEntity {
 
     @Column(name = "statement_success_cost", nullable = false, precision = 19, scale = 2)
     private BigDecimal statementSuccessCost;
+
+    @Column(name = "statement_allow_negative", nullable = false)
+    private boolean statementAllowNegative = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statement_repeat_policy", nullable = false, length = 40)
+    private StatementRepeatChargePolicy statementRepeatPolicy = StatementRepeatChargePolicy.CHARGE_EVERY_ANALYSIS;
+
+    public boolean isStatementAllowNegative() { return statementAllowNegative; }
+    public void setStatementAllowNegative(boolean value) { statementAllowNegative = value; }
+    public StatementRepeatChargePolicy getStatementRepeatPolicy() { return statementRepeatPolicy; }
+    public void setStatementRepeatPolicy(StatementRepeatChargePolicy value) { statementRepeatPolicy = value; }
 
     @Column(nullable = false, length = 10)
     private String currency;

@@ -40,7 +40,7 @@ public class SubscriptionBillingService {
         if (amount == null || amount.signum() <= 0) {
             throw new BadRequestException("Top-up amount must be greater than zero");
         }
-        TenantSubscription subscription = requireSubscription(tenantId, subscriptionId);
+        TenantSubscription subscription = requireSubscriptionForUpdate(tenantId, subscriptionId);
         SubscriptionPlan plan = subscriptionPlanService.getRequiredEntity(subscription.getSubscriptionPlanId());
         TenantSubscriptionLedger entry = newEntry(
                 subscription,
@@ -90,7 +90,8 @@ public class SubscriptionBillingService {
 
     @Transactional
     public void evaluateNextCyclePricingMode(String tenantId) {
-        TenantSubscription subscription = getActiveSubscription(tenantId).orElse(null);
+        TenantSubscription subscription = tenantSubscriptionRepository
+                .findTopByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, TenantSubscriptionStatus.ACTIVE).orElse(null);
         if (subscription == null || subscription.getPricingMode() != SubscriptionPricingMode.FIXED_MONTHLY) {
             return;
         }
@@ -137,7 +138,8 @@ public class SubscriptionBillingService {
             java.util.function.Function<SubscriptionPlan, BigDecimal> amountExtractor,
             String notes,
             String actor) {
-        TenantSubscription subscription = getActiveSubscription(tenantId).orElse(null);
+        TenantSubscription subscription = tenantSubscriptionRepository
+                .findTopByTenantIdAndStatusOrderByCreatedAtDesc(tenantId, TenantSubscriptionStatus.ACTIVE).orElse(null);
         if (subscription == null) {
             return;
         }
@@ -199,6 +201,11 @@ public class SubscriptionBillingService {
     private TenantSubscription requireSubscription(String tenantId, String subscriptionId) {
         return tenantSubscriptionRepository.findById(subscriptionId)
                 .filter(subscription -> subscription.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new NotFoundException("Tenant subscription not found"));
+    }
+
+    private TenantSubscription requireSubscriptionForUpdate(String tenantId, String subscriptionId) {
+        return tenantSubscriptionRepository.findByIdAndTenantIdForUpdate(subscriptionId, tenantId)
                 .orElseThrow(() -> new NotFoundException("Tenant subscription not found"));
     }
 

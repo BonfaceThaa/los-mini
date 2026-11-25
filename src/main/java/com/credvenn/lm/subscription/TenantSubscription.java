@@ -62,6 +62,18 @@ public class TenantSubscription extends AuditableEntity {
     @Column(name = "total_debited", nullable = false, precision = 19, scale = 2)
     private BigDecimal totalDebited;
 
+    @Column(name = "statement_allow_negative_override")
+    private Boolean statementAllowNegativeOverride;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "statement_repeat_policy_override", length = 40)
+    private StatementRepeatChargePolicy statementRepeatPolicyOverride;
+
+    public Boolean getStatementAllowNegativeOverride() { return statementAllowNegativeOverride; }
+    public void setStatementAllowNegativeOverride(Boolean value) { statementAllowNegativeOverride = value; }
+    public StatementRepeatChargePolicy getStatementRepeatPolicyOverride() { return statementRepeatPolicyOverride; }
+    public void setStatementRepeatPolicyOverride(StatementRepeatChargePolicy value) { statementRepeatPolicyOverride = value; }
+
     @Column(name = "created_by", nullable = false)
     private String createdBy;
 

@@ -11,6 +11,7 @@ import com.credvenn.lm.document.DocumentService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.credvenn.stmt.analyzer.core.AnalysisResult;
+import com.credvenn.lm.subscription.StatementSubscriptionEligibilityService;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -38,6 +39,7 @@ public class StatementAnalysisService {
     private final CladfyStatementTransactionRepository cladfyStatementTransactionRepository;
     private final ApplicationStatementOtpService applicationStatementOtpService;
     private final ObjectMapper objectMapper;
+    private final StatementSubscriptionEligibilityService statementEligibility;
 
     public StatementAnalysisService(
             StatementAnalysisRepository statementAnalysisRepository,
@@ -48,7 +50,8 @@ public class StatementAnalysisService {
             StatementReviewService statementReviewService,
             CladfyStatementTransactionRepository cladfyStatementTransactionRepository,
             ApplicationStatementOtpService applicationStatementOtpService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            StatementSubscriptionEligibilityService statementEligibility) {
         this.statementAnalysisRepository = statementAnalysisRepository;
         this.applicationEventPublisher = applicationEventPublisher;
         this.statementProviderRegistry = statementProviderRegistry;
@@ -58,6 +61,7 @@ public class StatementAnalysisService {
         this.cladfyStatementTransactionRepository = cladfyStatementTransactionRepository;
         this.applicationStatementOtpService = applicationStatementOtpService;
         this.objectMapper = objectMapper;
+        this.statementEligibility = statementEligibility;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -95,6 +99,9 @@ public class StatementAnalysisService {
             analysis.setSourceDocumentId(documentId);
             analysis.setProvider(providerCode);
             analysis.setStatus(StatementAnalysisStatus.PENDING);
+            if ("INTERNAL_MPESA".equals(providerCode)) {
+                statementEligibility.captureForSubmission(tenantId, analysis);
+            }
             analysis = statementAnalysisRepository.save(analysis);
             log.info("Queued statement analysis for documentId={}", documentId);
             applicationEventPublisher.publishEvent(new StatementAnalysisRequestedEvent(
@@ -286,7 +293,8 @@ public class StatementAnalysisService {
                 InternalStatementResultMapper.monthlySummary(internalResult),
                 InternalStatementResultMapper.monthlyMetrics(internalResult),
                 InternalStatementResultMapper.categories(analysis.getId(), internalResult),
-                InternalStatementResultMapper.quality(internalResult));
+                InternalStatementResultMapper.quality(internalResult),
+                "INTERNAL_MPESA".equalsIgnoreCase(analysis.getProvider()) ? analysis.getBillingStatus() : null);
     }
 
     private Optional<StoredAnalysisResponse> parseStoredAnalysisResponse(String rawProviderResponse) {

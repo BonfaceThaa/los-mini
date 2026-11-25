@@ -143,6 +143,22 @@ class StatementAnalysisServiceTest {
     }
 
     @Test
+    void internalAnalysisRequiresEligibleTenantSubscriptionBeforeSaving() {
+        TestContext context = new TestContext();
+        when(context.applicationService.getRequired("tenant-1", "app-1")).thenReturn(application("app-1", ApplicationStatus.STATEMENT_PENDING));
+        var document = new com.credvenn.lm.document.ApplicationDocument();
+        document.setApplicationId("app-1");
+        when(context.documentService.getRequired("tenant-1", "doc-1")).thenReturn(document);
+        when(context.statementProviderRegistry.providerForTenant("tenant-1")).thenReturn("INTERNAL_MPESA");
+        org.mockito.Mockito.doThrow(new com.credvenn.lm.common.exception.ForbiddenOperationException("no active subscription"))
+                .when(context.eligibility).captureForSubmission(org.mockito.ArgumentMatchers.eq("tenant-1"), any());
+        assertThrows(com.credvenn.lm.common.exception.ForbiddenOperationException.class,
+                () -> context.service.run("tenant-1", "app-1", "doc-1", "officer", null));
+        verify(context.statementAnalysisRepository, never()).save(any(StatementAnalysis.class));
+        verify(context.applicationEventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void runPublishesSavedAnalysisIdForAfterCommitProcessing() {
         TestContext context = new TestContext();
         var application = application("app-1", ApplicationStatus.STATEMENT_PENDING);
@@ -318,6 +334,7 @@ class StatementAnalysisServiceTest {
         private final CladfyStatementTransactionRepository transactionRepository = mock(CladfyStatementTransactionRepository.class);
         private final com.credvenn.lm.application.ApplicationStatementOtpService applicationStatementOtpService = mock(com.credvenn.lm.application.ApplicationStatementOtpService.class);
         private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+        private final com.credvenn.lm.subscription.StatementSubscriptionEligibilityService eligibility = mock(com.credvenn.lm.subscription.StatementSubscriptionEligibilityService.class);
         private final StatementAnalysisService service = new StatementAnalysisService(
                 statementAnalysisRepository,
                 applicationEventPublisher,
@@ -327,6 +344,7 @@ class StatementAnalysisServiceTest {
                 statementReviewService,
                 transactionRepository,
                 applicationStatementOtpService,
-                objectMapper);
+                objectMapper,
+                eligibility);
     }
 }

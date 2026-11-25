@@ -11,6 +11,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import com.credvenn.lm.subscription.StatementRepeatChargePolicy;
+import com.credvenn.lm.subscription.StatementBillingStatus;
 
 @Entity
 @Table(name = "application_statement_analyses")
@@ -89,6 +91,43 @@ public class StatementAnalysis extends AuditableEntity {
 
     @Column(name = "completed_at")
     private Instant completedAt;
+
+    @Column(name = "billing_subscription_id", length = 36)
+    private String billingSubscriptionId;
+    @Column(name = "billing_plan_id", length = 36)
+    private String billingPlanId;
+    @Column(name = "billing_amount", precision = 19, scale = 2)
+    private BigDecimal billingAmount;
+    @Column(name = "billing_currency", length = 10)
+    private String billingCurrency;
+    @Column(name = "billing_allow_negative")
+    private Boolean billingAllowNegative;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "billing_repeat_policy", length = 40)
+    private StatementRepeatChargePolicy billingRepeatPolicy;
+    @Column(name = "billing_captured_at")
+    private Instant billingCapturedAt;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "billing_status", length = 30)
+    private StatementBillingStatus billingStatus;
+
+    public StatementBillingStatus getBillingStatus() { return billingStatus; }
+    public void setBillingStatus(StatementBillingStatus value) { billingStatus = value; }
+
+    public String getBillingSubscriptionId() { return billingSubscriptionId; }
+    public void setBillingSubscriptionId(String value) { billingSubscriptionId = value; }
+    public String getBillingPlanId() { return billingPlanId; }
+    public void setBillingPlanId(String value) { billingPlanId = value; }
+    public BigDecimal getBillingAmount() { return billingAmount; }
+    public void setBillingAmount(BigDecimal value) { billingAmount = value; }
+    public String getBillingCurrency() { return billingCurrency; }
+    public void setBillingCurrency(String value) { billingCurrency = value; }
+    public Boolean getBillingAllowNegative() { return billingAllowNegative; }
+    public void setBillingAllowNegative(Boolean value) { billingAllowNegative = value; }
+    public StatementRepeatChargePolicy getBillingRepeatPolicy() { return billingRepeatPolicy; }
+    public void setBillingRepeatPolicy(StatementRepeatChargePolicy value) { billingRepeatPolicy = value; }
+    public Instant getBillingCapturedAt() { return billingCapturedAt; }
+    public void setBillingCapturedAt(Instant value) { billingCapturedAt = value; }
 
     @PrePersist
     void assignId() {
