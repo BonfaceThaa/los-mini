@@ -158,6 +158,7 @@ public class ApplicationVariableService {
         definition.setLabel(request.label().trim()); definition.setSectionName(clean(request.sectionName())); definition.setFieldType(request.fieldType());
         definition.setRequired(request.required()); definition.setDisplayOrder(Optional.ofNullable(request.displayOrder()).orElse(0));
         definition.setMinimumSelections(request.minimumSelections()); definition.setMaximumSelections(request.maximumSelections()); definition.setOptionsJson(write(options));
+        definition.setScoringWeight(request.scoringWeight());
         if (incrementVersion) definition.setDefinitionVersion(definition.getDefinitionVersion() + 1);
     }
 
@@ -171,8 +172,8 @@ public class ApplicationVariableService {
                 .orElseThrow(() -> new NotFoundException("Origination profile not found")).getId();
     }
     private ApplicationVariableDefinition requiredDefinition(String tenantId, String id) { return definitions.findByIdAndTenantId(id, tenantId).orElseThrow(() -> new NotFoundException("Application question not found")); }
-    private ApplicationVariableDtos.DefinitionResponse toDefinitionResponse(ApplicationVariableDefinition d) { return new ApplicationVariableDtos.DefinitionResponse(d.getId(), d.getCode(), d.getLabel(), d.getSectionName(), d.getFieldType(), d.isRequired(), d.isActive(), d.getDisplayOrder(), d.getDefinitionVersion(), d.getMinimumSelections(), d.getMaximumSelections(), readOptions(d.getOptionsJson()), d.getOriginationProfileId()); }
-    private ApplicationVariableDtos.AnswerResponse toAnswerResponse(ApplicationVariable v) { AnswerSnapshot a = read(v.getAnswerValue()); return new ApplicationVariableDtos.AnswerResponse(v.getDefinitionId(), v.getDefinitionVersion(), v.getCodeSnapshot(), v.getLabelSnapshot(), v.getSectionSnapshot(), v.getFieldTypeSnapshot(), a.textValue(), a.selectedValues()); }
+    private ApplicationVariableDtos.DefinitionResponse toDefinitionResponse(ApplicationVariableDefinition d) { return new ApplicationVariableDtos.DefinitionResponse(d.getId(), d.getCode(), d.getLabel(), d.getSectionName(), d.getFieldType(), d.isRequired(), d.isActive(), d.getDisplayOrder(), d.getDefinitionVersion(), d.getMinimumSelections(), d.getMaximumSelections(), readOptions(d.getOptionsJson()), d.getOriginationProfileId(), d.getScoringWeight()); }
+    private ApplicationVariableDtos.AnswerResponse toAnswerResponse(ApplicationVariable v) { AnswerSnapshot a = read(v.getAnswerValue()); return new ApplicationVariableDtos.AnswerResponse(v.getDefinitionId(), v.getDefinitionVersion(), v.getCodeSnapshot(), v.getLabelSnapshot(), v.getSectionSnapshot(), v.getFieldTypeSnapshot(), a.textValue(), a.selectedValues().stream().map(o -> new ApplicationVariableDtos.Option(o.value(), o.label())).toList()); }
     private String normalizeCode(String value) { return value.trim().toUpperCase(Locale.ROOT); }
     private String clean(String value) { return value == null || value.isBlank() ? null : value.trim(); }
     private String write(Object value) { try { return objectMapper.writeValueAsString(value); } catch (Exception ex) { throw new BadRequestException("Application variable JSON is invalid"); } }

@@ -1,5 +1,8 @@
 package com.credvenn.lm.application;
 
+import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.ArgumentMatchers.anyInt;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.eq;
@@ -376,6 +379,7 @@ class ApplicationServiceTest {
         private final ClientRecordService clientRecordService = mock(ClientRecordService.class);
         private final ApplicationVariableService applicationVariableService = mock(ApplicationVariableService.class);
         private final OriginationProfileResolver profiles = mock(OriginationProfileResolver.class);
+        private final jakarta.persistence.EntityManager entityManager = mock(jakarta.persistence.EntityManager.class);
         private final ApplicationService service = new ApplicationService(
                 applicationRepository,
                 statusHistoryRepository,
@@ -392,9 +396,13 @@ class ApplicationServiceTest {
                 applicationEventPublisher,
                 subscriptionGuardService,
                 subscriptionBillingService,
-                applicationVariableService, profiles, mock(jakarta.persistence.EntityManager.class), mock(com.credvenn.lm.logbook.LogbookWorkflowService.class));
+                applicationVariableService, profiles, entityManager, mock(com.credvenn.lm.logbook.LogbookWorkflowService.class));
 
         private TestContext() {
+            var scorecardQuery = mock(jakarta.persistence.Query.class);
+            when(entityManager.createNativeQuery(startsWith("SELECT scorecard_version_id"))).thenReturn(scorecardQuery);
+            when(scorecardQuery.setParameter(anyInt(), any())).thenReturn(scorecardQuery);
+            when(scorecardQuery.getResultList()).thenReturn(List.of());
             when(profiles.resolveForApplication("tenant-1", null)).thenReturn("profile-1");
             when(applicationStatementOtpService.listViews(anyString(), anyString())).thenReturn(List.of());
         }

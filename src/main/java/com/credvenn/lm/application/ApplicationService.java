@@ -127,6 +127,7 @@ public class ApplicationService {
             String actor,
             ApplicationDtos.CreateLoanRequestApplicationRequest request) {
         subscriptionGuardService.assertCanCreateApplication(tenantId);
+        // The profile resolver locks the tenant for the duration of application creation.
         String profileId = originationProfileResolver.resolveForApplication(tenantId, request.originationProfileCode());
         List<ApplicationVariableService.PreparedAnswer> preparedVariables = applicationVariableService.prepare(
                 tenantId, profileId, request.applicationVariables());
@@ -143,6 +144,10 @@ public class ApplicationService {
         LoanRequestApplication application = new LoanRequestApplication();
         application.setTenantId(tenantId);
         application.setOriginationProfileId(profileId);
+        @SuppressWarnings("unchecked")
+        List<String> activeScorecards = entityManager.createNativeQuery("SELECT scorecard_version_id FROM scoring_active_scorecards WHERE tenant_id = ?1 AND origination_profile_id = ?2")
+                .setParameter(1, tenantId).setParameter(2, profileId).getResultList();
+        application.setScorecardVersionId(activeScorecards.isEmpty() ? null : activeScorecards.get(0));
         application.setApplicantFirstName(request.applicantFirstName().trim());
         application.setApplicantMiddleName(trimToNull(request.applicantMiddleName()));
         application.setApplicantLastName(request.applicantLastName().trim());

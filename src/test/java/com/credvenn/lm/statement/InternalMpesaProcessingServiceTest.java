@@ -18,13 +18,15 @@ import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.io.ByteArrayResource;
+import com.credvenn.lm.scoring.InitialAssessmentStartService;
 
 class InternalMpesaProcessingServiceTest {
     private final DocumentService documents = mock(DocumentService.class);
     private final ApplicationStatementOtpService otps = mock(ApplicationStatementOtpService.class);
     private final InternalMpesaCompletionService completion = mock(InternalMpesaCompletionService.class);
+    private final InitialAssessmentStartService assessments = mock(InitialAssessmentStartService.class);
     private final InternalMpesaProcessingService service = new InternalMpesaProcessingService(
-            new InternalMpesaStatementAnalysisProvider(), completion, otps, documents);
+            new InternalMpesaStatementAnalysisProvider(), completion, otps, documents, assessments);
 
     @Test
     void extractsStoredTenantDocumentWithActualAnalyzer() throws Exception {
@@ -33,6 +35,7 @@ class InternalMpesaProcessingServiceTest {
         service.process(work(), "officer");
         var result = ArgumentCaptor.forClass(AnalysisResult.class);
         verify(completion).complete(eq("tenant-1"), eq("analysis-1"), eq("officer"), result.capture(), isNull());
+        verify(assessments).start("tenant-1", "app-1", "analysis-1");
         assertFalse(result.getValue().transactions().isEmpty());
         assertEquals("analysis-1", result.getValue().correlationId());
         verifyNoInteractions(otps);
@@ -59,6 +62,16 @@ class InternalMpesaProcessingServiceTest {
         service.process(work(), "officer");
         verify(completion).fail("tenant-1", "analysis-1", "officer", "MALFORMED_PDF", null);
         verify(completion, never()).complete(any(), any(), any(), any(), any());
+        verifyNoInteractions(assessments);
+    }
+
+    @Test
+    void snapshotFailureDoesNotTurnSuccessfulExtractionIntoFailure() throws Exception {
+        when(documents.loadContent("tenant-1", "doc-1")).thenReturn(new ByteArrayResource(fixture()));
+        doThrow(new IllegalStateException("snapshot unavailable")).when(assessments).start("tenant-1", "app-1", "analysis-1");
+        service.process(work(), "officer");
+        verify(completion).complete(eq("tenant-1"), eq("analysis-1"), eq("officer"), any(), isNull());
+        verify(completion, never()).fail(any(), any(), any(), any(), any());
     }
 
     @Test

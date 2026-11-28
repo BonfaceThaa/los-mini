@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.util.List;
+import java.math.BigDecimal;
 
 public final class ApplicationVariableDtos {
     private ApplicationVariableDtos() {}
@@ -11,7 +12,10 @@ public final class ApplicationVariableDtos {
     @Schema(name = "ApplicationVariableOption")
     public record Option(
             @NotBlank @Size(max = 100) @Schema(example = "PARENT") String value,
-            @NotBlank @Size(max = 255) @Schema(example = "Parent") String label) {}
+            @NotBlank @Size(max = 255) @Schema(example = "Parent") String label,
+            @DecimalMin("0") @DecimalMax("100") BigDecimal points) {
+        public Option(String value, String label) { this(value, label, null); }
+    }
 
     @Schema(name = "UpsertApplicationVariableDefinitionRequest")
     public record DefinitionRequest(
@@ -24,10 +28,16 @@ public final class ApplicationVariableDtos {
             @PositiveOrZero Integer minimumSelections,
             @Positive Integer maximumSelections,
             @Valid List<Option> options,
-            @Size(max = 100) @Schema(description = "Tenant profile code; null or omitted means shared, including on PUT") String originationProfileCode) {
+            @Size(max = 100) @Schema(description = "Tenant profile code; null or omitted means shared, including on PUT") String originationProfileCode,
+            @DecimalMin("0") @Digits(integer = 9, fraction = 2) BigDecimal scoringWeight) {
+        public DefinitionRequest(String code, String label, String sectionName, ApplicationVariableFieldType fieldType,
+                boolean required, Integer displayOrder, Integer minimumSelections, Integer maximumSelections, List<Option> options,
+                String originationProfileCode) {
+            this(code, label, sectionName, fieldType, required, displayOrder, minimumSelections, maximumSelections, options, originationProfileCode, null);
+        }
         public DefinitionRequest(String code, String label, String sectionName, ApplicationVariableFieldType fieldType,
                 boolean required, Integer displayOrder, Integer minimumSelections, Integer maximumSelections, List<Option> options) {
-            this(code, label, sectionName, fieldType, required, displayOrder, minimumSelections, maximumSelections, options, null);
+                    this(code, label, sectionName, fieldType, required, displayOrder, minimumSelections, maximumSelections, options, null, null);
         }
     }
 
@@ -35,7 +45,7 @@ public final class ApplicationVariableDtos {
     public record DefinitionResponse(String id, String code, String label, String sectionName,
             ApplicationVariableFieldType fieldType, boolean required, boolean active, int displayOrder,
             int definitionVersion, Integer minimumSelections, Integer maximumSelections, List<Option> options,
-            @Schema(description = "Null for shared questions") String originationProfileId) {}
+            @Schema(description = "Null for shared questions") String originationProfileId, BigDecimal scoringWeight) {}
 
     @Schema(name = "ApplicationVariableAnswerRequest")
     public record AnswerRequest(

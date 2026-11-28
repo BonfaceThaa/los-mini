@@ -33,6 +33,12 @@ public class LoanRequestApplication extends AuditableEntity {
     @Column(name = "origination_profile_id", length = 36)
     private String originationProfileId;
 
+    @Column(name = "scorecard_version_id", length = 36)
+    private String scorecardVersionId;
+
+    public String getScorecardVersionId() { return scorecardVersionId; }
+    public void setScorecardVersionId(String value) { scorecardVersionId = value; }
+
     @Column(name = "selected_loan_product_mapping_id", length = 36)
     private String selectedLoanProductMappingId;
 

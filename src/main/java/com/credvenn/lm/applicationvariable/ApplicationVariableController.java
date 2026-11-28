@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -29,7 +30,10 @@ public class ApplicationVariableController {
     public ResponseEntity<List<ApplicationVariableDtos.DefinitionResponse>> list(
             @Parameter(description = "Exclude inactive questions") @RequestParam(defaultValue = "true") boolean activeOnly,
             @RequestParam(required = false) String originationProfileCode) {
-        return ResponseEntity.ok(service.list(currentActorService.requireCurrentUser().tenantId(), activeOnly, originationProfileCode));
+        var result = service.list(currentActorService.requireCurrentUser().tenantId(), activeOnly, originationProfileCode);
+        boolean canManage = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> "APPLICATION_VARIABLE_MANAGE".equals(a.getAuthority()));
+        return ResponseEntity.ok(canManage ? result : result.stream().map(ApplicationVariableController::withoutScoring).toList());
     }
 
     @GetMapping("/all")
@@ -69,5 +73,11 @@ public class ApplicationVariableController {
     @Operation(summary = "Deactivate an application question")
     public ResponseEntity<ApplicationVariableDtos.DefinitionResponse> deactivate(@PathVariable String definitionId) {
         return ResponseEntity.ok(service.setActive(currentActorService.requireCurrentUser().tenantId(), definitionId, false));
+    }
+
+    private static ApplicationVariableDtos.DefinitionResponse withoutScoring(ApplicationVariableDtos.DefinitionResponse d) {
+        return new ApplicationVariableDtos.DefinitionResponse(d.id(), d.code(), d.label(), d.sectionName(), d.fieldType(),
+                d.required(), d.active(), d.displayOrder(), d.definitionVersion(), d.minimumSelections(), d.maximumSelections(),
+                d.options().stream().map(o -> new ApplicationVariableDtos.Option(o.value(), o.label())).toList(), d.originationProfileId(), null);
     }
 }

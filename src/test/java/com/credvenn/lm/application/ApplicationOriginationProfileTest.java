@@ -71,6 +71,10 @@ class ApplicationOriginationProfileTest {
 
     private void tenant() { when(tenants.findForOriginationUpdate("tenant-1")).thenReturn(Optional.of(tenant)); }
     private void persistence() {
+        var scorecardQuery = mock(jakarta.persistence.Query.class);
+        when(entityManager.createNativeQuery(startsWith("SELECT scorecard_version_id"))).thenReturn(scorecardQuery);
+        when(scorecardQuery.setParameter(anyInt(), any())).thenReturn(scorecardQuery);
+        when(scorecardQuery.getResultList()).thenReturn(List.of());
         when(applications.save(any())).thenAnswer(call -> {
             LoanRequestApplication application = call.getArgument(0); application.assignId();
             assertNotNull(application.getOriginationProfileId());
@@ -122,6 +126,17 @@ class ApplicationOriginationProfileTest {
         tenant(); persistence(); tenant.setDefaultOriginationProfileId(null);
         when(profiles.findForApplicationByTenantIdAndCodeIgnoreCase("tenant-1", "CUSTOM_PHONE")).thenReturn(Optional.of(profile));
         assertEquals("profile-explicit", service.create("tenant-1", "officer", request("CUSTOM_PHONE")).originationProfileId());
+    }
+
+    @Test void pinsActiveScorecardForResolvedTenantAndProfile() {
+        tenant(); persistence();
+        when(profiles.findForApplicationByTenantIdAndCodeIgnoreCase("tenant-1", "CUSTOM_PHONE")).thenReturn(Optional.of(profile));
+        var query = entityManager.createNativeQuery("SELECT scorecard_version_id FROM scoring_active_scorecards WHERE tenant_id = ?1 AND origination_profile_id = ?2");
+        when(query.getResultList()).thenReturn(List.of("scorecard-v1"));
+        var created = service.create("tenant-1", "officer", request("CUSTOM_PHONE"));
+        assertEquals("scorecard-v1", stored.get(created.id()).getScorecardVersionId());
+        verify(query).setParameter(1, "tenant-1");
+        verify(query).setParameter(2, "profile-explicit");
     }
 
     @Test void otherTenantOrUnknownCodeDoesNotFallBackToDefault() {

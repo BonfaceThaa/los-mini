@@ -1,0 +1,9 @@
+# Questionnaire scoring: phase 2 implementation status
+
+The pure `QuestionnaireScoreCalculator` accepts immutable question and answer snapshots supplied by its caller. It calculates normalized scores, selects the lowest points for multiple selections, evaluates configured conditions, excludes unanswered optional and inapplicable questions, and returns `REVIEW` for missing required, invalid or version-mismatched answers. It does not create questions or scores by default.
+
+Phase 2 is **not connected to an API or to INTERNAL_MPESA scoring**. Phase 1 provides profile-scoped published scorecard snapshots, application-time version pinning, statement-policy configuration, and an initial-assessment snapshot attempt after extraction, with a scheduled recovery scan. Rescoring is not implemented. There is therefore no curl endpoint for calculation and no change to statement decisions or billing. Existing configuration requests are documented in `internal-mpesa-scoring-phase-1-question-setup.md`.
+
+The calculator accepts a condition referencing one unconditional parent question and the parent option codes that make the child applicable. Configure Q5 against Q4 and Q7 against Q1 when scorecard configuration is implemented. The caller must provide snapshots from the same tenant and profile. The calculator itself is deliberately pure and is not an authorization boundary. Until version reconciliation is designed, an answer whose definition version differs from the scorecard version yields `REVIEW`.
+
+Run `QuestionnaireScoreCalculatorTest` to verify scoring, conditional exclusions, lowest selected points, optional and required answers, invalid values and version mismatch. The displayed component score is rounded to two decimal places; the future combined scoring implementation must preserve adequate intermediate precision and define its own final rounding.

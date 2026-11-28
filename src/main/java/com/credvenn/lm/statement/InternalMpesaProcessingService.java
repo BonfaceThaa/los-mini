@@ -7,21 +7,28 @@ import com.credvenn.stmt.analyzer.core.AnalysisResult;
 import com.credvenn.stmt.analyzer.core.ProcessingErrorCode;
 import com.credvenn.stmt.analyzer.core.extraction.ExtractionLimits;
 import java.io.IOException;
+import com.credvenn.lm.scoring.InitialAssessmentStartService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class InternalMpesaProcessingService {
+    private static final Logger log = LoggerFactory.getLogger(InternalMpesaProcessingService.class);
     private final InternalMpesaStatementAnalysisProvider provider;
     private final InternalMpesaCompletionService completion;
     private final ApplicationStatementOtpService otps;
     private final DocumentService documents;
+    private final InitialAssessmentStartService assessments;
 
     public InternalMpesaProcessingService(InternalMpesaStatementAnalysisProvider provider,
-            InternalMpesaCompletionService completion, ApplicationStatementOtpService otps, DocumentService documents) {
+            InternalMpesaCompletionService completion, ApplicationStatementOtpService otps, DocumentService documents,
+            InitialAssessmentStartService assessments) {
         this.provider = provider;
         this.completion = completion;
         this.otps = otps;
         this.documents = documents;
+        this.assessments = assessments;
     }
 
     public void process(StatementSubmissionPreparationService.PreparedSubmission work, String actor) {
@@ -55,5 +62,13 @@ public class InternalMpesaProcessingService {
             return;
         }
         completion.complete(work.tenantId(), work.analysisId(), actor, result, otpId);
+        if (!result.transactions().isEmpty()) {
+            try {
+                assessments.start(work.tenantId(), work.applicationId(), work.analysisId());
+            } catch (RuntimeException ex) {
+                // Extraction and billing already committed; an unavailable assessment stays in review.
+                log.warn("Unable to start internal assessment for analysisId={}; manual review remains required", work.analysisId(), ex);
+            }
+        }
     }
 }

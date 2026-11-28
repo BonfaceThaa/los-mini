@@ -3,6 +3,7 @@ package com.credvenn.lm.applicationvariable;
 import com.credvenn.lm.common.domain.AuditableEntity;
 import jakarta.persistence.*;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "application_variable_definitions")
@@ -21,6 +22,7 @@ public class ApplicationVariableDefinition extends AuditableEntity {
     @Column(name = "minimum_selections") private Integer minimumSelections;
     @Column(name = "maximum_selections") private Integer maximumSelections;
     @Column(name = "options_json", columnDefinition = "TEXT") private String optionsJson;
+    @Column(name = "scoring_weight", precision = 11, scale = 2) private BigDecimal scoringWeight;
 
     @PrePersist void assignId() { if (id == null) id = UUID.randomUUID().toString(); }
     public String getId() { return id; }
@@ -38,4 +40,5 @@ public class ApplicationVariableDefinition extends AuditableEntity {
     public Integer getMinimumSelections() { return minimumSelections; } public void setMinimumSelections(Integer value) { minimumSelections = value; }
     public Integer getMaximumSelections() { return maximumSelections; } public void setMaximumSelections(Integer value) { maximumSelections = value; }
     public String getOptionsJson() { return optionsJson; } public void setOptionsJson(String value) { optionsJson = value; }
+    public BigDecimal getScoringWeight() { return scoringWeight; } public void setScoringWeight(BigDecimal value) { scoringWeight = value; }
 }
